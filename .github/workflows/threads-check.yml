@@ -1,0 +1,59 @@
+name: Threads 接続確認
+
+# Secrets が正しく設定できているかを、投稿せずに確認する。
+# 投稿は一切行わず、読み取り専用の API しか叩かない。
+on:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Secrets が設定されているか
+        env:
+          THREADS_USER_ID: ${{ secrets.THREADS_USER_ID }}
+          THREADS_ACCESS_TOKEN: ${{ secrets.THREADS_ACCESS_TOKEN }}
+        run: |
+          status=0
+          for name in THREADS_USER_ID THREADS_ACCESS_TOKEN; do
+            if [ -z "${!name}" ]; then
+              echo "::error::$name が未設定です"
+              status=1
+            else
+              echo "$name: 設定あり（${#name} 文字の名前 / 値は伏せます）"
+            fi
+          done
+          exit $status
+
+      - name: トークンの持ち主を確認する
+        env:
+          PYTHONPATH: src
+          THREADS_ACCESS_TOKEN: ${{ secrets.THREADS_ACCESS_TOKEN }}
+        run: python -m threads_bot me
+
+      - name: Secret の user_id が一致するか
+        env:
+          PYTHONPATH: src
+          THREADS_USER_ID: ${{ secrets.THREADS_USER_ID }}
+          THREADS_ACCESS_TOKEN: ${{ secrets.THREADS_ACCESS_TOKEN }}
+        run: |
+          actual="$(python -m threads_bot me 2>/dev/null | python -c 'import json,sys; print(json.load(sys.stdin)["id"])')"
+          if [ "$actual" = "${THREADS_USER_ID}" ]; then
+            echo "THREADS_USER_ID はトークンの持ち主と一致しています。"
+          else
+            echo "::error::THREADS_USER_ID が一致しません。トークンの持ち主の id は $actual です。"
+            exit 1
+          fi
+
+      - name: 投稿枠の残りを確認する
+        env:
+          PYTHONPATH: src
+          THREADS_USER_ID: ${{ secrets.THREADS_USER_ID }}
+          THREADS_ACCESS_TOKEN: ${{ secrets.THREADS_ACCESS_TOKEN }}
+        run: python -m threads_bot limit

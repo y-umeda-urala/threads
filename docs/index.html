@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Threads 投稿予約</title>
+    <link rel="stylesheet" href="./styles.css?v=11" />
+  </head>
+  <body>
+    <header class="topbar">
+      <h1>Threads 投稿予約</h1>
+      <div class="topbar-actions">
+        <span id="conn" class="badge badge-off">未接続</span>
+        <button id="open-settings" class="btn btn-ghost" type="button">設定</button>
+      </div>
+    </header>
+
+    <div id="banner" class="banner" hidden></div>
+
+    <!-- 設定 -->
+    <section id="settings" class="panel" hidden>
+      <h2>接続設定</h2>
+      <p class="note">
+        GitHub の Personal Access Token を使って、このリポジトリの投稿キューを読み書きします。
+        トークンは<strong>このブラウザの中だけ</strong>に保存され、どこにも送信されません
+        （GitHub API を除く）。
+      </p>
+      <label>
+        リポジトリ
+        <input id="cfg-repo" type="text" placeholder="owner/repo" autocomplete="off" />
+      </label>
+      <label>
+        ブランチ
+        <input id="cfg-branch" type="text" placeholder="main" autocomplete="off" />
+      </label>
+      <label>
+        Personal Access Token
+        <input id="cfg-token" type="password" placeholder="github_pat_..." autocomplete="off" />
+      </label>
+      <p class="note">
+        Fine-grained token を、このリポジトリだけに絞って
+        <strong>Contents: Read and write</strong> の権限で作ってください。
+        <a id="pat-link" href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noreferrer">作成ページを開く</a>
+      </p>
+
+      <label>
+        Anthropic API キー（任意・校正機能を使う場合）
+        <input id="cfg-anthropic" type="password" placeholder="sk-ant-..." autocomplete="off" />
+      </label>
+      <p class="note">
+        投稿の校正に使います。空のままなら校正ボタンは出ません。
+        <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noreferrer">キーの作成ページ</a>
+        で専用のキーを作り、<strong>利用上限を設定しておいてください</strong>。
+        GitHub のトークンと違い、キー自体に使える範囲の制限がかけられません。
+      </p>
+      <div class="row">
+        <button id="save-settings" class="btn btn-primary" type="button">保存して接続</button>
+        <button id="clear-settings" class="btn btn-ghost" type="button">トークンを消す</button>
+      </div>
+    </section>
+
+    <nav class="tabs" role="tablist">
+      <button class="tab is-active" data-tab="compose" role="tab" type="button">投稿を作る</button>
+      <button class="tab" data-tab="split" role="tab" type="button">ネタから作る</button>
+      <button class="tab" data-tab="queue" role="tab" type="button">
+        予約中 <span id="queue-count" class="count">0</span>
+      </button>
+      <button class="tab" data-tab="history" role="tab" type="button">投稿済み</button>
+    </nav>
+
+    <!-- 投稿を作る -->
+    <section id="tab-compose" class="tabpanel" role="tabpanel">
+      <form id="composer" class="panel">
+        <div id="edit-bar" class="edit-bar" hidden>
+          <span class="edit-chip">編集中</span>
+          <span id="edit-target" class="edit-target"></span>
+          <button id="cancel-edit-top" class="btn btn-ghost" type="button">やめる</button>
+        </div>
+        <h2 id="composer-title">新しい投稿</h2>
+
+        <label>
+          本文
+          <textarea id="f-text" rows="5" maxlength="500" placeholder="いま思っていることを書く"></textarea>
+        </label>
+        <div class="counter"><span id="count-text">0</span> / 500</div>
+
+        <div class="row proofread-bar" id="proofread-bar" hidden>
+          <button id="proofread" class="btn" type="button">Claude で校正する</button>
+          <span id="proofread-status" class="note"></span>
+        </div>
+
+        <div id="proofread-result" class="proofread" hidden>
+          <div class="field-label">校正案</div>
+          <div id="proofread-text" class="card-text"></div>
+          <ul id="proofread-notes" class="notes"></ul>
+          <div class="row">
+            <button id="apply-proofread" class="btn btn-primary" type="button">この文面にする</button>
+            <button id="dismiss-proofread" class="btn btn-ghost" type="button">閉じる</button>
+          </div>
+        </div>
+
+        <fieldset class="when">
+          <legend>いつ投稿するか</legend>
+          <div id="when-scheduled">
+            <div class="datetime">
+              <input id="f-date" type="date" aria-label="投稿する日付" />
+              <select id="f-time" aria-label="投稿する時刻"></select>
+            </div>
+            <div class="note">日本時間・10 分刻みで指定します。実際の投稿は数分ほど遅れることがあります。</div>
+            <div class="row quick">
+              <button class="btn btn-chip" type="button" data-quick="30">30分後</button>
+              <button class="btn btn-chip" type="button" data-quick="180">3時間後</button>
+              <button class="btn btn-chip" type="button" data-quick="tomorrow9">明日 9:00</button>
+              <button class="btn btn-chip" type="button" data-quick="tomorrow19">明日 19:00</button>
+            </div>
+          </div>
+        </fieldset>
+
+        <details class="more">
+          <summary>連投・画像・その他</summary>
+
+          <div class="field">
+            <span class="field-label">連投（1件目への返信として順につながります）</span>
+            <div id="thread-parts"></div>
+            <button id="add-thread" class="btn btn-ghost" type="button">＋ 連投を追加</button>
+          </div>
+
+          <div class="field">
+            <span class="field-label">画像</span>
+            <input id="f-image" type="file" accept="image/jpeg,image/png" />
+            <div id="image-preview" class="image-preview" hidden>
+              <img id="image-thumb" alt="添付画像のプレビュー" />
+              <div>
+                <div id="image-name" class="mono"></div>
+                <button id="remove-image" class="btn btn-ghost" type="button">外す</button>
+              </div>
+            </div>
+            <label>
+              代替テキスト（読み上げ用の説明）
+              <input id="f-alt" type="text" placeholder="例: 雨の降る福井の街並み" />
+            </label>
+            <div class="note">
+              JPEG / PNG、8MB まで。リポジトリの assets/images/ に保存され、その公開 URL を Threads に渡します。
+            </div>
+          </div>
+
+          <label>
+            リンク（本文に添えるカード）
+            <input id="f-link" type="url" placeholder="https://example.com" />
+          </label>
+
+          <label>
+            返信できる人
+            <select id="f-reply-control">
+              <option value="">指定しない（全員）</option>
+              <option value="everyone">全員</option>
+              <option value="accounts_you_follow">フォローしているアカウントのみ</option>
+              <option value="mentioned_only">メンションしたアカウントのみ</option>
+            </select>
+          </label>
+        </details>
+
+        <div class="row">
+          <button id="submit" class="btn btn-primary" type="submit">キューに入れる</button>
+          <button id="cancel-edit" class="btn btn-ghost" type="button" hidden>編集をやめる</button>
+        </div>
+      </form>
+    </section>
+
+    <!-- ネタから作る -->
+    <section id="tab-split" class="tabpanel" role="tabpanel" hidden>
+      <form id="splitter" class="panel">
+        <h2>ネタから投稿を作る</h2>
+        <p class="note">
+          話したいことをそのまま書いてください。箇条書きでも、思いつくままでも構いません。
+          Claude が読んで、独立して読める投稿に分けます。
+        </p>
+        <label>
+          ネタ
+          <textarea id="s-source" rows="8" placeholder="例: 今日は自動投稿の仕組みを作った。GitHub Actions の cron が動かなくて…"></textarea>
+        </label>
+        <div class="counter"><span id="s-count">0</span> 文字</div>
+        <label>
+          何本に分けるか
+          <select id="s-parts">
+            <option value="2">2 本</option>
+            <option value="3" selected>3 本</option>
+            <option value="4">4 本</option>
+            <option value="5">5 本</option>
+          </select>
+        </label>
+        <div class="row">
+          <button id="split" class="btn btn-primary" type="submit">Claude で分ける</button>
+          <span id="split-status" class="note"></span>
+        </div>
+      </form>
+
+      <div id="split-result" class="panel" hidden>
+        <h2>できた投稿</h2>
+        <p class="note">そのまま直せます。要らない本は「外す」で除けます。</p>
+        <div id="split-items"></div>
+
+        <fieldset class="when">
+          <legend>いつから投稿するか</legend>
+          <div class="datetime">
+            <input id="s-date" type="date" aria-label="1 本目の日付" />
+            <select id="s-time" aria-label="1 本目の時刻"></select>
+          </div>
+          <label>
+            間隔
+            <select id="s-interval">
+              <option value="30">30 分おき</option>
+              <option value="60">1 時間おき</option>
+              <option value="180">3 時間おき</option>
+              <option value="1440" selected>1 日おき</option>
+            </select>
+          </label>
+          <div id="split-preview" class="note"></div>
+        </fieldset>
+
+        <div class="row">
+          <button id="save-split" class="btn btn-primary" type="button">まとめて予約する</button>
+          <button id="discard-split" class="btn btn-ghost" type="button">やめる</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- 予約中 -->
+    <section id="tab-queue" class="tabpanel" role="tabpanel" hidden>
+      <div id="queue-list" class="list"></div>
+      <p id="queue-empty" class="empty" hidden>予約中の投稿はありません。</p>
+    </section>
+
+    <!-- 投稿済み -->
+    <section id="tab-history" class="tabpanel" role="tabpanel" hidden>
+      <div id="history-list" class="list"></div>
+      <p id="history-empty" class="empty" hidden>まだ投稿はありません。</p>
+    </section>
+
+    <script src="./app.js?v=11"></script>
+  </body>
+</html>

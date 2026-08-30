@@ -1,0 +1,18 @@
+# 投稿キュー（JSON Lines）。1 行 1 投稿。`#` で始まる行と空行は無視されます。
+# 使えるフィールド:
+#   text            (必須) 本文。500 文字まで
+#   scheduled_at    (必須) 予約日時。例 "2026-09-01T09:00" (既定 Asia/Tokyo)
+#                          これが無い行は投稿されません（validate がエラーにします）
+#   id              (任意) 投稿の識別子。省略時は本文から自動生成
+#   image_url       (任意) 公開 URL の画像。video_url とは併用不可
+#   video_url       (任意) 公開 URL の動画
+#   alt_text        (任意) 画像・動画の代替テキスト
+#   link_attachment (任意) テキスト投稿に付けるリンク
+#   reply_control   (任意) everyone / accounts_you_follow / mentioned_only
+#   thread          (任意) 連投。1 件目への返信として順に投稿される
+#
+# 投稿したい内容を、この下に 1 行 1 投稿の JSON で書き足してください。
+# 例: {"text": "はじめての投稿。", "scheduled_at": "2026-09-01T09:00"}
+#
+# 投稿が済んだ行は消さずに残してください。Web アプリの「投稿済み」タブは、
+# state/posted.json の記録とこの行の本文を突き合わせて履歴を表示します。

@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "threads-bot"
+version = "0.1.0"
+description = "Threads (threads.net) への自動投稿ボット。外部 cron が起動する GitHub Actions が投稿キューを消化する。"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+threads-bot = "threads_bot.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

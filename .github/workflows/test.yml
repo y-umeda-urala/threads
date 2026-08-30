@@ -1,0 +1,23 @@
+name: テスト
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: ユニットテスト
+        run: python -m unittest discover -s tests
+        env:
+          PYTHONPATH: src
+      - name: 投稿キューの検証
+        run: python -m threads_bot validate
+        env:
+          PYTHONPATH: src

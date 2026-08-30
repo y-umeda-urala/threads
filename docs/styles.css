@@ -1,0 +1,315 @@
+:root {
+  --bg: #ffffff;
+  --bg-soft: #f6f7f9;
+  --fg: #16181d;
+  --fg-muted: #5b6270;
+  --border: #dfe2e8;
+  --accent: #1d6ef5;
+  --accent-fg: #ffffff;
+  --danger: #c1352b;
+  --ok: #1a7f4b;
+  --accent-soft: #e7f0fe;
+  --radius: 10px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #14161a;
+    --bg-soft: #1c1f25;
+    --fg: #e8eaed;
+    --fg-muted: #9aa2b1;
+    --border: #2c313a;
+    --accent: #4d8dff;
+    --accent-fg: #0b1220;
+    --danger: #ff7a70;
+    --ok: #5cd196;
+    --accent-soft: #16263d;
+  }
+}
+
+* { box-sizing: border-box; }
+
+/* display を指定した要素にも hidden 属性を効かせる */
+[hidden] { display: none !important; }
+
+body {
+  margin: 0 auto;
+  padding: 0 1rem 4rem;
+  max-width: 42rem;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: system-ui, -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif;
+  line-height: 1.65;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 1rem 0 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.topbar h1 { margin: 0; font-size: 1.05rem; white-space: nowrap; }
+.topbar-actions { display: flex; align-items: center; gap: 0.5rem; }
+
+.badge {
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  border: 1px solid var(--border);
+  color: var(--fg-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 9rem;
+}
+.badge-on { color: var(--ok); border-color: currentColor; }
+.badge-off { color: var(--fg-muted); }
+
+.banner {
+  margin: 0.75rem 0;
+  padding: 0.6rem 0.8rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg-soft);
+  font-size: 0.9rem;
+}
+.banner-error { border-color: var(--danger); color: var(--danger); }
+.banner-ok { border-color: var(--ok); color: var(--ok); }
+
+.tabs {
+  display: flex;
+  gap: 0.15rem;
+  margin: 1rem 0;
+  border-bottom: 1px solid var(--border);
+  /* タブが増えても折り返さず、入りきらなければ横スクロールさせる */
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.tabs::-webkit-scrollbar { display: none; }
+
+.tab {
+  flex: 0 0 auto;
+  padding: 0.5rem 0.55rem;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--fg-muted);
+  font: inherit;
+  font-size: 0.9rem;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.tab.is-active { color: var(--fg); border-bottom-color: var(--accent); }
+
+.count {
+  display: inline-block;
+  min-width: 1.4em;
+  padding: 0 0.35em;
+  border-radius: 999px;
+  background: var(--bg-soft);
+  font-size: 0.78rem;
+  text-align: center;
+}
+
+.panel {
+  margin: 0 0 1rem;
+  padding: 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-soft);
+}
+.panel h2 { margin: 0 0 0.75rem; font-size: 1rem; }
+
+label {
+  display: block;
+  margin-bottom: 0.75rem;
+  font-size: 0.88rem;
+  color: var(--fg-muted);
+}
+label.radio { display: flex; align-items: flex-start; gap: 0.4rem; color: var(--fg); }
+label.radio input { margin-top: 0.45rem; }
+
+input[type="text"],
+input[type="url"],
+input[type="password"],
+input[type="datetime-local"],
+select,
+textarea {
+  display: block;
+  width: 100%;
+  margin-top: 0.25rem;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  font-size: 1rem;
+}
+textarea { resize: vertical; line-height: 1.6; }
+input[type="file"] { font-size: 0.9rem; color: var(--fg-muted); }
+
+.counter { margin: -0.5rem 0 0.9rem; font-size: 0.8rem; color: var(--fg-muted); text-align: right; }
+.counter.over { color: var(--danger); }
+
+fieldset.when {
+  margin: 0 0 0.9rem;
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+fieldset.when legend { padding: 0 0.35rem; font-size: 0.85rem; color: var(--fg-muted); }
+#when-scheduled { margin-top: 0.6rem; }
+
+.row { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+.datetime { display: flex; gap: 0.5rem; }
+.datetime input { flex: 1 1 60%; margin-top: 0; }
+.datetime select { flex: 1 1 40%; margin-top: 0; }
+.row.quick { margin-top: 0.5rem; }
+
+.btn {
+  padding: 0.45rem 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+.btn:hover { border-color: var(--accent); }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-primary { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+.btn-ghost { background: none; }
+.btn-chip { padding: 0.25rem 0.6rem; border-radius: 999px; font-size: 0.82rem; }
+.btn-danger { color: var(--danger); }
+
+.more { margin-bottom: 0.9rem; }
+.more summary { cursor: pointer; font-size: 0.9rem; color: var(--fg-muted); }
+.field { margin: 0.9rem 0; }
+.field-label { display: block; margin-bottom: 0.35rem; font-size: 0.88rem; color: var(--fg-muted); }
+
+.thread-part { display: flex; gap: 0.4rem; align-items: flex-start; margin-bottom: 0.4rem; }
+.thread-part textarea { margin-top: 0; }
+
+.image-preview { display: flex; gap: 0.75rem; align-items: center; margin: 0.5rem 0; }
+.image-preview img { width: 72px; height: 72px; object-fit: cover; border-radius: 8px; border: 1px solid var(--border); }
+
+.note { margin: 0.35rem 0 0.9rem; font-size: 0.82rem; color: var(--fg-muted); }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.8rem; word-break: break-all; }
+
+.list { display: flex; flex-direction: column; gap: 0.6rem; }
+
+.card {
+  padding: 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-soft);
+}
+.card-when { font-size: 0.8rem; color: var(--fg-muted); margin-bottom: 0.35rem; }
+.card-when.due { color: var(--danger); }
+.card-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.card-meta { margin-top: 0.4rem; font-size: 0.8rem; color: var(--fg-muted); }
+.card-actions { display: flex; gap: 0.4rem; margin-top: 0.6rem; }
+.card img.attached { max-width: 100%; margin-top: 0.5rem; border-radius: 8px; border: 1px solid var(--border); }
+
+.empty { color: var(--fg-muted); text-align: center; padding: 2rem 0; }
+
+a { color: var(--accent); }
+
+/* 校正 */
+.proofread-bar { margin-bottom: 0.9rem; }
+
+.proofread {
+  margin: 0 0 0.9rem;
+  padding: 0.8rem;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--bg);
+}
+
+.proofread .card-text { margin-bottom: 0.5rem; }
+
+.notes {
+  margin: 0 0 0.7rem;
+  padding-left: 1.1rem;
+  font-size: 0.84rem;
+  color: var(--fg-muted);
+}
+.notes li { margin-bottom: 0.2rem; }
+.notes .kind { color: var(--fg); }
+
+/* ネタから作る */
+.split-item {
+  margin-bottom: 0.9rem;
+  padding: 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+}
+.split-item textarea { margin-top: 0.35rem; }
+.split-item .counter { margin: 0.2rem 0 0; }
+.split-item .card-actions { margin-top: 0.3rem; }
+
+#split-preview { margin: 0.6rem 0 0; }
+
+/* 分割結果のなかに出す校正欄は、外側の枠と入れ子になるので控えめにする */
+.proofread-inline {
+  margin-top: 0.6rem;
+  padding: 0.65rem 0.75rem;
+  background: var(--bg-soft);
+  font-size: 0.92rem;
+}
+.proofread-inline .notes { margin-bottom: 0.55rem; }
+.split-item .card-actions { flex-wrap: wrap; align-items: center; }
+.split-item .card-actions .note { margin: 0; }
+
+/* 編集中であることを、色と帯ではっきり出す */
+.panel.is-editing {
+  border-color: var(--accent);
+  background: var(--bg);
+}
+
+.edit-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin: 0 0 0.9rem;
+  padding: 0.5rem 0.6rem;
+  background: var(--accent-soft);
+  border-radius: 8px;
+}
+
+.edit-chip {
+  flex: 0 0 auto;
+  padding: 0.12rem 0.5rem;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.edit-target {
+  flex: 1 1 8rem;
+  font-size: 0.82rem;
+  color: var(--fg-muted);
+  overflow-wrap: anywhere;
+}
+
+.edit-bar .btn { flex: 0 0 auto; padding: 0.25rem 0.6rem; font-size: 0.82rem; }
+
+/* 別のタブにいても編集中だと分かるように印を出す */
+.tab-dot {
+  display: inline-block;
+  width: 0.45rem;
+  height: 0.45rem;
+  margin-left: 0.3rem;
+  border-radius: 50%;
+  background: var(--accent);
+  vertical-align: middle;
+}

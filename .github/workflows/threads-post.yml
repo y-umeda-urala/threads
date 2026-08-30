@@ -1,0 +1,61 @@
+name: Threads 予約投稿
+
+# 予約時刻 (scheduled_at) が来た投稿を拾って公開する。
+# 予約時刻が来たものしか出ないので、何度叩かれても投稿は増えない。
+# 起動の間隔を短くするほど、指定した時刻に近づく。
+on:
+  # 外部の cron から叩く入口。GitHub の schedule は遅延・スキップがあるため、
+  # 予約投稿の起動はこちらを本線にしている。
+  repository_dispatch:
+    types: [threads-tick]
+  # schedule は保険として残す（発火すれば拾うが、当てにはしない）
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: "この実行で投稿する件数"
+        required: false
+        default: "5"
+      dry_run:
+        description: "true なら API を呼ばず内容だけ表示する"
+        required: false
+        default: "false"
+
+# 起動が重なっても二重投稿にならないよう直列化する
+concurrency:
+  group: threads-post
+  cancel-in-progress: false
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      PYTHONPATH: src
+      DRY_RUN: ${{ github.event.inputs.dry_run }}
+      LIMIT: ${{ github.event.inputs.limit }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: キューの形式を検証する
+        run: python -m threads_bot validate
+
+      - name: 予約時刻が来た投稿を公開する
+        env:
+          THREADS_USER_ID: ${{ secrets.THREADS_USER_ID }}
+          THREADS_ACCESS_TOKEN: ${{ secrets.THREADS_ACCESS_TOKEN }}
+        run: |
+          args="post --limit ${LIMIT:-5}"
+          if [ "${DRY_RUN}" = "true" ]; then
+            args="$args --dry-run"
+          fi
+          python -m threads_bot $args
+
+      - name: 投稿済み記録をコミットする
+        run: ./scripts/commit_file.sh
