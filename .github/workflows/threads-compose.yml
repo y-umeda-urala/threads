@@ -1,6 +1,6 @@
 name: Threads 翌日ぶんを作成
 
-# 運用ボードとネタ帳を材料に、翌日ぶんの投稿 3 本を作ってキューに追加する。
+# 運用ボードとネタ帳を材料に、翌日ぶんの投稿 10 本を作ってキューに追加する。
 # 外部 cron から毎日きまった時刻（例: 22:00 JST）に threads-compose で起動する想定。
 on:
   repository_dispatch:
@@ -37,7 +37,7 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: 翌日ぶんの 3 本を作る
+      - name: 翌日ぶんの 10 本を作る
         run: python scripts/compose.py
 
       - name: キューの形式を検証する
@@ -47,4 +47,4 @@ jobs:
 
       - name: キューをコミットする
         run: |
-          ./scripts/commit_file.sh posts/queue.jsonl "chore(queue): 翌日ぶんの 3 本を追加"
+          ./scripts/commit_file.sh posts/queue.jsonl "chore(queue): 翌日ぶんの 10 本を追加"
