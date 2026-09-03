@@ -36,6 +36,7 @@ QUEUE_PATH = Path("posts/queue.jsonl")
 API_BASE = "https://api.anthropic.com/v1"
 API_VERSION = "2023-06-01"
 URALA_FEED_URL = "https://urala.today/feed/"
+URALA_DESIGN_URL = "https://urala-design.jp/"
 
 SLOTS = [
     (6, "URALA新着記事紹介", "F（紹介型）", "朝いちばんに読んで、今日のURALAの話題を知れる"),
@@ -112,6 +113,44 @@ def fetch_urala_articles(limit: int = 10) -> str:
     print(f"URALA新着記事: {len(lines)} 件を読み込みました。")
     return "\n".join(lines)
 
+def fetch_urala_design_works(limit: int = 15) -> str:
+    """ウララコミュニケーションズの制作実績（urala-design.jp）を取得し、材料として整形する。
+
+    RSS が無いサイトなので、トップページの HTML から
+    「/works/?cat_num=」を含むリンクのタイトルを正規表現で拾う簡易スクレイピング。
+    サイト構造が変わって 0 件になっても、処理は止めず材料なしで続ける。
+    """
+    try:
+        request = urllib.request.Request(
+            URALA_DESIGN_URL, headers={"User-Agent": "threads-bot/1.0"}
+        )
+        with urllib.request.urlopen(request, timeout=30) as response:
+            if response.status != 200:
+                print(f"::warning::URALA制作実績: 取得できませんでした (HTTP {response.status})")
+                return ""
+            html = response.read().decode("utf-8", errors="replace")
+    except Exception as exc:  # noqa: BLE001
+        print(f"::warning::URALA制作実績: 取得に失敗しました ({exc})")
+        return ""
+
+    pattern = re.compile(
+        r'href="(https://urala-design\.jp/service/[a-z]+/works/\?cat_num=[a-z0-9]+)"[^>]*>\s*(.*?)\s*</a>',
+        re.S,
+    )
+    seen = set()
+    lines = []
+    for url, raw_title in pattern.findall(html):
+        title = re.sub(r"<[^>]+>", "", raw_title)
+        title = re.sub(r"\s+", " ", title).strip()
+        if not title or url in seen:
+            continue
+        seen.add(url)
+        lines.append(f"- 「{title}」 {url}")
+        if len(lines) >= limit:
+            break
+
+    print(f"URALA制作実績: {len(lines)} 件を読み込みました。")
+    return "\n".join(lines)
 
 def api_request(method: str, path: str, api_key: str, body: dict | None = None) -> dict:
     data = json.dumps(body).encode("utf-8") if body is not None else None
@@ -201,7 +240,7 @@ def describe_filled(filled: dict[int, dict]) -> str:
     return "\n".join(parts)
 
 
-def build_prompt(board: str, neta: str, articles: str, recent: str, target_date, needed, filled) -> str:
+def build_prompt(board: str, neta: str,works: str, articles: str, recent: str, target_date, needed, filled) -> str:
     slot_lines = "\n".join(
         f"- {hour}:00 ｜ 柱: {pillar} ｜ 型: {form} ｜ ねらい: {aim}"
         for hour, pillar, form, aim in needed
@@ -218,8 +257,9 @@ def build_prompt(board: str, neta: str, articles: str, recent: str, target_date,
         "## 枠と役割",
         slot_lines,
         "",
-        "柱が「URALA新着記事紹介」の枠は、下の「URALAサイトの新着記事」から1件選び、",
-        "その記事を紹介する投稿にしてください。記事のURLは省略せずそのまま本文またはTHREADの末尾に書くこと",
+        "柱が「URALA新着記事紹介」の枠は、下の「URALAサイトの新着記事」または",
+        "「ウララコミュニケーションズの制作実績」のどちらか1件を選び、",
+        "その記事・実績を紹介する投稿にしてください。URLは省略せずそのまま本文またはTHREADの末尾に書くこと",
         "（この枠に限り、下の文体ルールの「リンクは貼らない」を適用しません）。",
         "紹介する記事がない場合や新着記事の材料が空の場合は、無理に作らず柱を",
         "「自己開示・日常」に読み替えて書いてください。",
@@ -242,6 +282,9 @@ def build_prompt(board: str, neta: str, articles: str, recent: str, target_date,
         "",
         "## URALAサイトの新着記事（記事紹介枠の材料。タイトルと概要の範囲で紹介し、内容を創作しない）",
         articles or "（取得できませんでした）",
+        "",
+        "## ウララコミュニケーションズの制作実績（urala-design.jp。記事紹介枠でこちらを紹介してもよい）",
+        works or "（取得できませんでした）",
         "",
         "## 直近の投稿（ネタ・切り口・書き出しの重複を避けるため）",
         recent or "（なし）",
@@ -378,9 +421,10 @@ def main() -> None:
     board = fetch_doc(os.environ.get("BOARD_DOC_ID", "").strip(), "運用ボード")
     neta = fetch_doc(os.environ.get("NETA_DOC_ID", "").strip(), "ネタ帳")
     articles = fetch_urala_articles()
+    works = fetch_urala_design_works()
 
     model = pick_model(api_key)
-    prompt = build_prompt(board, neta, articles, recent_texts(entries), target_date, needed, filled)
+    prompt = build_prompt(board, neta, articles, works, recent_texts(entries), target_date, needed, filled)
     posts = generate(api_key, model, prompt, len(needed))
 
     by_hour = {int(p["hour"]): p for p in posts}
