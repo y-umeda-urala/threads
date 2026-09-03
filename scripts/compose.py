@@ -240,7 +240,7 @@ def describe_filled(filled: dict[int, dict]) -> str:
     return "\n".join(parts)
 
 
-def build_prompt(board: str, neta: str,works: str, articles: str, recent: str, target_date, needed, filled) -> str:
+def build_prompt(board: str, neta: str, articles: str, works: str, recent: str, target_date, needed, filled) -> str:
     slot_lines = "\n".join(
         f"- {hour}:00 ｜ 柱: {pillar} ｜ 型: {form} ｜ ねらい: {aim}"
         for hour, pillar, form, aim in needed
