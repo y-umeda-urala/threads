@@ -1,0 +1,50 @@
+name: Threads 翌日ぶんを作成
+
+# 運用ボードとネタ帳を材料に、翌日ぶんの投稿 3 本を作ってキューに追加する。
+# 外部 cron から毎日きまった時刻（例: 22:00 JST）に threads-compose で起動する想定。
+on:
+  repository_dispatch:
+    types: [threads-compose]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "true なら生成結果を表示するだけでキューに書き込まない"
+        required: false
+        default: "false"
+
+# 投稿の実行と重ならないよう、同じ枠で直列化する
+concurrency:
+  group: threads-post
+  cancel-in-progress: false
+
+jobs:
+  compose:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      DRY_RUN: ${{ github.event.inputs.dry_run }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      # ドキュメント ID は秘密ではないので Variables に置く
+      BOARD_DOC_ID: ${{ vars.BOARD_DOC_ID }}
+      NETA_DOC_ID: ${{ vars.NETA_DOC_ID }}
+      ANTHROPIC_MODEL: ${{ vars.ANTHROPIC_MODEL }}
+      ANTHROPIC_WORKSPACE_ID: ${{ vars.ANTHROPIC_WORKSPACE_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 翌日ぶんの 3 本を作る
+        run: python scripts/compose.py
+
+      - name: キューの形式を検証する
+        env:
+          PYTHONPATH: src
+        run: python -m threads_bot validate
+
+      - name: キューをコミットする
+        run: |
+          ./scripts/commit_file.sh posts/queue.jsonl "chore(queue): 翌日ぶんの 3 本を追加"
