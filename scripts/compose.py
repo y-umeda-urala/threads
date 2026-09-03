@@ -102,6 +102,7 @@ def fetch_urala_articles(limit: int = 10) -> str:
     for item in items:
         title = (item.findtext("title") or "").strip()
         link = (item.findtext("link") or "").strip()
+        link = link.split("?")[0]
         description = (item.findtext("description") or "").strip()
         description = re.sub(r"<[^>]+>", "", description)
         description = re.sub(r"\s+", " ", description).strip()[:200]
