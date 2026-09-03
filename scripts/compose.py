@@ -1,10 +1,12 @@
-"""翌日ぶんの Threads 投稿 3 本を作成し、投稿キューに追加する。
+cat > scripts/compose.py << 'PYEOF'
+"""翌日ぶんの Threads 投稿 10 本を作成し、投稿キューに追加する。
 
 外部 cron から毎日きまった時刻（例: 22:00 JST）に起動される想定。
 
 材料:
   - 運用ボード（Google ドキュメント / リンクを知っている全員が閲覧可）
   - ネタ帳（同上）
+  - URALA サイトの新着記事（https://urala.today/feed/ の RSS）
   - posts/queue.jsonl の直近の投稿（重複回避のため）
 
 必要な環境変数:
@@ -25,6 +27,7 @@ import string
 import sys
 import urllib.error
 import urllib.request
+import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -33,12 +36,20 @@ JST = ZoneInfo("Asia/Tokyo")
 QUEUE_PATH = Path("posts/queue.jsonl")
 API_BASE = "https://api.anthropic.com/v1"
 API_VERSION = "2023-06-01"
+URALA_FEED_URL = "https://urala.today/feed/"
 
-# 予約する時刻と、その枠の役割
+# 予約する時刻と、その枠の役割。半分は URALA の新着記事紹介、半分は人物寄りの投稿。
 SLOTS = [
-    (6, "ノウハウ／仕事観", "B（ノウハウ型）またはA（気づき型）", "起き抜けに読んで学びになる"),
-    (12, "制作の裏側／福井というローカル", "C（裏側型）またはA（気づき型）", "何をしている人かが自然に伝わる"),
-    (20, "自己開示・日常", "E（問いかけ型）またはA（気づき型）", "人柄が伝わり、返信が生まれる"),
+    (5, "URALA新着記事紹介", "F（紹介型）", "朝いちばんに読んで、今日のURALAの話題を知れる"),
+    (7, "制作の裏側／福井というローカル", "C（裏側型）またはA（気づき型）", "何をしている人かが自然に伝わる"),
+    (9, "URALA新着記事紹介", "F（紹介型）", "通勤・通学時間に読まれる想定"),
+    (11, "ノウハウ／仕事観", "B（ノウハウ型）またはA（気づき型）", "仕事の合間に読んで学びになる"),
+    (13, "URALA新着記事紹介", "F（紹介型）", "お昼休みに読まれる想定"),
+    (15, "自己開示・日常", "E（問いかけ型）またはA（気づき型）", "人柄が伝わり、返信が生まれる"),
+    (17, "URALA新着記事紹介", "F（紹介型）", "仕事終わりに読まれる想定"),
+    (19, "制作の裏側／福井というローカル", "C（裏側型）またはA（気づき型）", "夕方以降にゆっくり読まれる"),
+    (21, "URALA新着記事紹介", "F（紹介型）", "夜、ゆっくりした時間に読まれる想定"),
+    (23, "自己開示・日常", "E（問いかけ型）またはA（気づき型）", "一日の終わりに読まれる想定"),
 ]
 
 # 未指定のときに上から順に探すモデル
@@ -71,6 +82,51 @@ def fetch_doc(doc_id: str, label: str) -> str:
         return ""
     print(f"{label}: {len(text)} 文字を読み込みました。")
     return text
+
+
+def fetch_urala_articles(limit: int = 10) -> str:
+    """URALA サイトの新着記事を RSS から取得し、紹介文の材料として整形する。
+
+    読めなくても処理は止めず、その材料なしで続ける（記事紹介枠には
+    「材料がない」ことがモデルに伝わるようにする）。
+    """
+    try:
+        request = urllib.request.Request(
+            URALA_FEED_URL, headers={"User-Agent": "threads-bot/1.0"}
+        )
+        with urllib.request.urlopen(request, timeout=30) as response:
+            if response.status != 200:
+                print(f"::warning::URALA新着記事: 取得できませんでした (HTTP {response.status})")
+                return ""
+            raw = response.read()
+    except Exception as exc:  # noqa: BLE001
+        print(f"::warning::URALA新着記事: 取得に失敗しました ({exc})")
+        return ""
+
+    try:
+        root = ET.fromstring(raw)
+    except ET.ParseError as exc:
+        print(f"::warning::URALA新着記事: RSS の解析に失敗しました ({exc})")
+        return ""
+
+    items = root.findall("./channel/item")[:limit]
+    if not items:
+        print("URALA新着記事: 0 件でした。")
+        return ""
+
+    lines = []
+    for item in items:
+        title = (item.findtext("title") or "").strip()
+        link = (item.findtext("link") or "").strip()
+        description = (item.findtext("description") or "").strip()
+        description = re.sub(r"<[^>]+>", "", description)  # HTML タグを除去
+        description = re.sub(r"\s+", " ", description).strip()[:200]
+        if not title or not link:
+            continue
+        lines.append(f"- 「{title}」 {link}\n  {description}")
+
+    print(f"URALA新着記事: {len(lines)} 件を読み込みました。")
+    return "\n".join(lines)
 
 
 def api_request(method: str, path: str, api_key: str, body: dict | None = None) -> dict:
@@ -127,7 +183,7 @@ def parse_entries(lines: list[str]) -> list[dict]:
     return entries
 
 
-def recent_texts(entries: list[dict], count: int = 12) -> str:
+def recent_texts(entries: list[dict], count: int = 20) -> str:
     """直近の投稿を、重複回避の材料として1つの文字列にまとめる。"""
     parts = []
     for entry in entries[-count:]:
@@ -164,13 +220,14 @@ def describe_filled(filled: dict[int, dict]) -> str:
     return "\n".join(parts)
 
 
-def build_prompt(board: str, neta: str, recent: str, target_date, needed, filled) -> str:
+def build_prompt(board: str, neta: str, articles: str, recent: str, target_date, needed, filled) -> str:
     slot_lines = "\n".join(
         f"- {hour}:00 ｜ 柱: {pillar} ｜ 型: {form} ｜ ねらい: {aim}"
         for hour, pillar, form, aim in needed
     )
     weekday = "月火水木金土日"[target_date.weekday()]
     hours = "、".join(f"{hour}:00" for hour, *_ in needed)
+    hour_choices = "／".join(str(hour) for hour, *_ in SLOTS)
     already = describe_filled(filled)
     sections = [
         "あなたは YU さん（福井市のフリーランス Web クリエイター／SNS コンテンツ制作者）の",
@@ -179,6 +236,12 @@ def build_prompt(board: str, neta: str, recent: str, target_date, needed, filled
         "",
         "## 枠と役割",
         slot_lines,
+        "",
+        "柱が「URALA新着記事紹介」の枠は、下の「URALAサイトの新着記事」から1件選び、",
+        "その記事を紹介する投稿にしてください。記事のURLは省略せずそのまま本文またはTHREADの末尾に書くこと",
+        "（この枠に限り、下の文体ルールの「リンクは貼らない」を適用しません）。",
+        "紹介する記事がない場合や新着記事の材料が空の場合は、無理に作らず柱を",
+        "「自己開示・日常」に読み替えて書いてください。",
         "",
     ]
     if already:
@@ -196,6 +259,9 @@ def build_prompt(board: str, neta: str, recent: str, target_date, needed, filled
         "## ネタ帳（YU さん本人が書いた生の材料。最優先で使う）",
         neta or "（空です）",
         "",
+        "## URALAサイトの新着記事（記事紹介枠の材料。タイトルと概要の範囲で紹介し、内容を創作しない）",
+        articles or "（取得できませんでした）",
+        "",
         "## 直近の投稿（ネタ・切り口・書き出しの重複を避けるため）",
         recent or "（なし）",
         "",
@@ -204,14 +270,14 @@ def build_prompt(board: str, neta: str, recent: str, target_date, needed, filled
         "- 一文は短く。3〜4 行ごとに空行",
         "- 冒頭 1 行で引き込む",
         "- 絵文字は使わない。ハッシュタグは 0〜1 個",
-        "- リンクは貼らない",
+        "- リンクは貼らない（ただし URALA新着記事紹介の枠は除く。その枠は記事URLを書くこと）",
         "- 1 投稿につき伝えたいことは 1 つだけ",
         "- クライアント実名は出さない（「福井の解体業の会社さん」のように業種で表現する）",
         "- 金額・社内事情・未公開情報は書かない",
         "- 誇張しない、盛らない。自慢に読めないよう、学び・失敗・裏側の形で語る",
         "",
         "## 事実について（最重要）",
-        "確認できない事実を創作しないこと。ネタ帳・運用ボード・直近の投稿に根拠がある内容だけを書く。",
+        "確認できない事実を創作しないこと。ネタ帳・運用ボード・新着記事・直近の投稿に根拠がある内容だけを書く。",
         "成果や反響（「問い合わせが増えました」など）は、根拠がない限り絶対に書かない。",
         "材料が足りなければ、材料のある範囲で小さく書く。",
         "ネタ帳の「使ってほしくないネタ」に書かれた話題は絶対に使わない。",
@@ -237,7 +303,7 @@ def build_prompt(board: str, neta: str, recent: str, target_date, needed, filled
         "@@@END",
         "",
         f"{hours} のぶんを、この順に @@@POST 〜 @@@END の組で並べてください。",
-        "HOUR には 6 / 12 / 20 のいずれかの数字だけを書きます。",
+        f"HOUR には {hour_choices} のいずれかの数字だけを書きます。",
     ]
     return "\n".join(sections)
 
@@ -331,15 +397,16 @@ def main() -> None:
     if filled:
         print("すでに予約済みの枠: " + "、".join(f"{h}:00" for h in sorted(filled)))
     if not needed:
-        print(f"{target_date} は 3 枠とも埋まっています。何もしません。")
+        print(f"{target_date} は {len(SLOTS)} 枠とも埋まっています。何もしません。")
         return
     print("これから作る枠: " + "、".join(f"{h}:00" for h, *_ in needed))
 
     board = fetch_doc(os.environ.get("BOARD_DOC_ID", "").strip(), "運用ボード")
     neta = fetch_doc(os.environ.get("NETA_DOC_ID", "").strip(), "ネタ帳")
+    articles = fetch_urala_articles()
 
     model = pick_model(api_key)
-    prompt = build_prompt(board, neta, recent_texts(entries), target_date, needed, filled)
+    prompt = build_prompt(board, neta, articles, recent_texts(entries), target_date, needed, filled)
     posts = generate(api_key, model, prompt, len(needed))
 
     by_hour = {int(p["hour"]): p for p in posts}
@@ -363,22 +430,3 @@ def main() -> None:
         existing_ids.add(item["id"])
         if thread:
             item["thread"] = thread
-        new_lines.append(json.dumps(item, ensure_ascii=False))
-        print(f"\n=== {hour}:00 ({len(text)} 字) ===\n{text}")
-        for index, part in enumerate(thread, start=2):
-            print(f"--- 連投 {index} ({len(part)} 字) ---\n{part}")
-        if post.get("note"):
-            print(f"[メモ] {post['note']}")
-
-    if dry_run:
-        print("\nDRY_RUN のため、キューには書き込みません。")
-        return
-
-    with QUEUE_PATH.open("a", encoding="utf-8") as handle:
-        for line in new_lines:
-            handle.write(line + "\n")
-    print(f"\nキューに {len(new_lines)} 件追加しました。")
-
-
-if __name__ == "__main__":
-    main()
