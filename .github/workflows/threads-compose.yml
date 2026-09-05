@@ -1,7 +1,7 @@
 name: Threads 翌日ぶんを作成
 
 # 運用ボードとネタ帳を材料に、翌日ぶんの投稿 10 本を作ってキューに追加する。
-# 外部 cron から毎日きまった時刻（例: 22:00 JST）に threads-compose で起動する想定。
+# 外部 cron から毎日 20:00 (JST) に threads-compose で起動する想定。
 on:
   repository_dispatch:
     types: [threads-compose]
