@@ -61,7 +61,7 @@ LEVER_COOLDOWN_DAYS = 3     # 同じレバーを続けて動かさない日数
 # 何かを変えたら、そのあと何日かは何も変えずに様子を見る（観察期間）。
 # 変更の効果は 1 日では分からない。数日そのまま試すのも立派な判断。
 # リポジトリの Variables `REVIEW_HOLD_DAYS` で変えられる（0 にすれば毎日変えてよい）。
-HOLD_DAYS = int(os.environ.get("REVIEW_HOLD_DAYS", "3") or 0)
+HOLD_DAYS = int(os.environ.get("REVIEW_HOLD_DAYS") or 3)  # 未設定・空文字なら 3
 
 # 動かしてよいレバー（運用ボードの文体・禁止事項・事実の扱いには触らない）
 LEVERS = ("書き出し", "長さ", "連投", "話題の比重")
