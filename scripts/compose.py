@@ -54,6 +54,25 @@ SLOTS = [
 MODEL_PREFERENCE = ("opus", "sonnet", "haiku")
 
 
+LEARNINGS_PATH = Path("insights/learnings.md")
+
+
+def learning_section() -> list[str]:
+    """検証チーム（scripts/review.py）が毎日更新する指示を読む。無ければ何も足さない。"""
+    if not LEARNINGS_PATH.exists():
+        return []
+    text = LEARNINGS_PATH.read_text(encoding="utf-8").strip()
+    if not text:
+        return []
+    return [
+        "## 検証チームからの指示（直近 7 日の数字に基づく）",
+        "以下は実際の閲覧・反応の数字から決めた指示です。切り口・長さ・連投・話題の比重はこれに従ってください。",
+        "ただし、運用ボードの文体・禁止事項・事実の扱いを超えることはできません。食い違えば運用ボードを優先します。",
+        text,
+        "",
+    ]
+
+
 def fail(message: str) -> None:
     print(f"::error::{message}")
     sys.exit(1)
@@ -274,6 +293,7 @@ def build_prompt(board: str, neta: str, articles: str, works: str, recent: str, 
             "",
         ]
     sections += [
+        *learning_section(),
         "## 運用ボード（最優先のルール。以下の指示と食い違ったらボードを優先する）",
         board or "（読み込めませんでした。以下の要点だけで書いてください）",
         "",
@@ -448,6 +468,8 @@ def main() -> None:
         existing_ids.add(item["id"])
         if thread:
             item["thread"] = thread
+        if post.get("note"):
+            item["note"] = str(post["note"])[:120]
         new_lines.append(json.dumps(item, ensure_ascii=False))
         print(f"\n=== {hour}:00 ({len(text)} 字) ===\n{text}")
         for index, part in enumerate(thread, start=2):

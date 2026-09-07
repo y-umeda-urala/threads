@@ -311,3 +311,14 @@ pyproject.toml                 パッケージ定義（`pip install -e .` 用。
   threads-refresh-token.yml    トークンの自動更新
   test.yml                     テスト
 ```
+
+## 日次レビュー（マーケティング部・検証改善チーム）
+
+毎日 19:15 JST ごろ、`scripts/review.py` が 24 時間以上たった投稿の数字（閲覧・いいね・返信・リポスト）を取り、
+直近 7 日を集計して「今日の変更」を 1 つだけ決め、`insights/learnings.md` を書き換えます。
+20:00 の compose はこのファイルを読んで翌日ぶんを作るので、生成 → 投稿 → 計測 → 反映 が 24 時間で 1 周します。
+
+- 動かすレバーは 書き出し／長さ／連投／話題の比重 の 4 つだけ。運用ボードの文体・禁止事項・事実の扱いには触りません
+- 測定済みが 6 本未満なら変更しません。同じレバーは 3 日続けて動かしません
+- 記録: `insights/metrics.jsonl`（測定値）／`insights/changes.jsonl`（変更の履歴）／`insights/daily/`（日ごとの検証ログ）
+- 起動: cron-job.org から `repository_dispatch` の `*-review` で叩く（GitHub の schedule は保険）
