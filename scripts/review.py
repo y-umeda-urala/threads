@@ -14,6 +14,7 @@
   - 1 日に動かすレバーは 1 つ。同時に複数変えると、何が効いたか分からなくなる
   - 測定済みが 6 本未満なら「データ不足・変更なし」
   - 同じレバーは 3 日続けて動かさない（効果が出る前に戻してしまうのを防ぐ）
+  - 何かを変えたら HOLD_DAYS（既定 3 日）は何も変えない。変更しないまま数日試すのも判断のうち
   - 文体・禁止事項・事実の扱い（運用ボード）には触らない。変えるのは切り口・長さ・連投・話題の比重だけ
 
 必要な環境変数:
@@ -48,6 +49,7 @@ METRICS_PATH = INSIGHTS_DIR / "metrics.jsonl"
 CHANGES_PATH = INSIGHTS_DIR / "changes.jsonl"
 LEARNINGS_PATH = INSIGHTS_DIR / "learnings.md"
 DAILY_DIR = INSIGHTS_DIR / "daily"
+CHANGELOG_PATH = INSIGHTS_DIR / "変更ログ.md"
 
 PLATFORM = os.environ.get("PLATFORM", "threads").strip().lower()
 DRY_RUN = os.environ.get("DRY_RUN", "").lower() == "true"
@@ -56,6 +58,10 @@ MIN_AGE_HOURS = 24          # 投稿から 24 時間たったものだけ測る�
 WINDOW_DAYS = 7             # 判定に使う期間
 MIN_SAMPLES = 6             # これ未満なら変更しない
 LEVER_COOLDOWN_DAYS = 3     # 同じレバーを続けて動かさない日数
+# 何かを変えたら、そのあと何日かは何も変えずに様子を見る（観察期間）。
+# 変更の効果は 1 日では分からない。数日そのまま試すのも立派な判断。
+# リポジトリの Variables `REVIEW_HOLD_DAYS` で変えられる（0 にすれば毎日変えてよい）。
+HOLD_DAYS = int(os.environ.get("REVIEW_HOLD_DAYS", "3") or 0)
 
 # 動かしてよいレバー（運用ボードの文体・禁止事項・事実の扱いには触らない）
 LEVERS = ("書き出し", "長さ", "連投", "話題の比重")
@@ -326,6 +332,18 @@ def decide(summary: dict) -> dict:
             "instruction": "変更なし（データ不足）",
             "reason": f"測定済みが {summary['n']} 本。{MIN_SAMPLES} 本そろうまで現状のまま続ける。",
         }
+    # 観察期間: 直近 HOLD_DAYS 日以内に何かを変えていたら、今日は何も変えない
+    held = [c for c in recent_changes(HOLD_DAYS) if c.get("lever")]
+    if held:
+        last = held[-1]
+        last_at = parse_iso(last["at"])
+        remaining = HOLD_DAYS - (datetime.now(JST) - last_at).days if last_at else HOLD_DAYS
+        return {
+            "lever": None,
+            "instruction": f"変更なし（観察中・あと {max(remaining, 0)} 日）",
+            "reason": f"{last['at'][:10]} に「{last['lever']}: {last['instruction']}」を変えたばかり。{HOLD_DAYS} 日は数字を積む。",
+            "holding": True,
+        }
     cooling = {c["lever"] for c in recent_changes(LEVER_COOLDOWN_DAYS) if c.get("lever")}
 
     candidates = []
@@ -559,6 +577,23 @@ def main() -> None:
     with CHANGES_PATH.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(change, ensure_ascii=False) + "\n")
     LEARNINGS_PATH.write_text(learnings, encoding="utf-8")
+    # 人が読む変更ログ（1 日 1 行・新しいものが上）
+    mark = "🔧" if decision.get("lever") else ("👀" if decision.get("holding") else "—")
+    line = (
+        f"| {now.date().isoformat()} | {mark} {decision['lever'] or 'なし'} | {decision['instruction']} | "
+        f"{decision['reason']} | {summary['n']} | {summary['views_avg']} | {summary['eng_avg']} |"
+    )
+    header = [
+        "# 変更ログ（検証改善チーム・自動）",
+        "",
+        "🔧 変えた ／ 👀 観察中（何かを変えた直後なので数日そのまま試す） ／ — 変更なし（差が小さい・データ不足）",
+        "",
+        "| 日付 | レバー | 指示 | 根拠 | 測定本数 | 平均閲覧 | 平均反応 |",
+        "|---|---|---|---|---|---|---|",
+    ]
+    existing = CHANGELOG_PATH.read_text(encoding="utf-8").splitlines() if CHANGELOG_PATH.exists() else []
+    rows = [ln for ln in existing if ln.startswith("| 20") and not ln.startswith(f"| {now.date().isoformat()} |")]
+    CHANGELOG_PATH.write_text("\n".join(header + [line] + rows) + "\n", encoding="utf-8")
     (DAILY_DIR / f"{now.date().isoformat()}.md").write_text(daily, encoding="utf-8")
     log("insights/ を更新しました。")
 

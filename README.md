@@ -320,5 +320,6 @@ pyproject.toml                 パッケージ定義（`pip install -e .` 用。
 
 - 動かすレバーは 書き出し／長さ／連投／話題の比重 の 4 つだけ。運用ボードの文体・禁止事項・事実の扱いには触りません
 - 測定済みが 6 本未満なら変更しません。同じレバーは 3 日続けて動かしません
-- 記録: `insights/metrics.jsonl`（測定値）／`insights/changes.jsonl`（変更の履歴）／`insights/daily/`（日ごとの検証ログ）
+- 記録: `insights/変更ログ.md`（人が読む変更ログ・1日1行）／`insights/metrics.jsonl`（測定値）／`insights/changes.jsonl`（変更の履歴）／`insights/daily/`（日ごとの検証ログ）
+- 何かを変えたら `REVIEW_HOLD_DAYS`（既定3日）は何も変えず様子を見る
 - 起動: cron-job.org から `repository_dispatch` の `*-review` で叩く（GitHub の schedule は保険）
