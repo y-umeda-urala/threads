@@ -15,6 +15,10 @@ on:
         description: "true なら結果を表示するだけでファイルを書かない"
         required: false
         default: "false"
+      force:
+        description: "true なら『今日はすでにレビュー済み』でも動かす"
+        required: false
+        default: "false"
 
 concurrency:
   group: threads-post
@@ -28,6 +32,8 @@ jobs:
     env:
       PLATFORM: threads
       DRY_RUN: ${{ github.event.inputs.dry_run }}
+      # 同じ日の2回目以降は既定でスキップする。叩き直したいときだけ true
+      FORCE: ${{ github.event.client_payload.force || github.event.inputs.force }}
       THREADS_ACCESS_TOKEN: ${{ secrets.THREADS_ACCESS_TOKEN }}
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       ANTHROPIC_MODEL: ${{ vars.ANTHROPIC_MODEL }}

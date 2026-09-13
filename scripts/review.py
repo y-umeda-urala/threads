@@ -515,6 +515,17 @@ def main() -> None:
     now = datetime.now(JST)
     log(f"日次レビュー開始: {now.isoformat()} ／ platform={PLATFORM}")
 
+    # 同じ日に何度も走らせない。
+    # 外部 cron の設定ミスで 10 分おきに叩かれ、1 日 33 回走った実績がある（2026-09-13）。
+    # もう一度動かしたいときは FORCE=true を付ける。
+    if os.environ.get("FORCE", "").strip().lower() != "true":
+        _prev = load_jsonl(CHANGES_PATH)
+        _dates = [parse_iso(e.get("at", "")) for e in _prev]
+        _dates = [d for d in _dates if d]
+        if _dates and max(_dates).astimezone(JST).date() == now.date():
+            log("::notice::今日はすでにレビュー済みです。何もしません（再実行するときは FORCE=true）")
+            return
+
     targets = collect_targets(now.astimezone(timezone.utc))
     log(f"測定対象: {len(targets)} 本")
 
