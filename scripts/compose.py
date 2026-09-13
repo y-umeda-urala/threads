@@ -422,7 +422,14 @@ def main() -> None:
         fail("ANTHROPIC_API_KEY が未設定です。リポジトリの Secrets に登録してください。")
 
     dry_run = os.environ.get("DRY_RUN", "").lower() == "true"
-    target_date = (datetime.now(JST) + timedelta(days=1)).date()
+    override = os.environ.get("TARGET_DATE", "").strip()
+    if override:
+        try:
+            target_date = datetime.strptime(override, "%Y-%m-%d").date()
+        except ValueError:
+            fail(f"TARGET_DATE の形式が不正です: {override}（YYYY-MM-DD で指定してください）")
+    else:
+        target_date = (datetime.now(JST) + timedelta(days=1)).date()
     print(f"作成対象: {target_date}（日本時間）")
 
     lines = read_queue_lines()
@@ -436,6 +443,21 @@ def main() -> None:
     if not needed:
         print(f"{target_date} は {len(SLOTS)} 枠とも埋まっています。何もしません。")
         return
+    # 当日ぶんを作り直すときに、すでに時刻を過ぎた枠を作らない
+    # （過ぎた時刻で作ると、次の tick で即座に投稿されてしまうため）
+    now_jst = datetime.now(JST)
+    past = [
+        slot[0]
+        for slot in needed
+        if datetime(target_date.year, target_date.month, target_date.day, slot[0], tzinfo=JST) <= now_jst
+    ]
+    if past:
+        print("すでに時刻を過ぎているため作らない枠: " + "、".join(f"{h}:00" for h in past))
+        needed = [slot for slot in needed if slot[0] not in past]
+        if not needed:
+            print("作れる枠がありません。何もしません。")
+            return
+
     print("これから作る枠: " + "、".join(f"{h}:00" for h, *_ in needed))
 
     board = fetch_doc(os.environ.get("BOARD_DOC_ID", "").strip(), "運用ボード")

@@ -11,6 +11,10 @@ on:
         description: "true なら生成結果を表示するだけでキューに書き込まない"
         required: false
         default: "false"
+      target_date:
+        description: "作成対象日 YYYY-MM-DD（空なら翌日）"
+        required: false
+        default: ""
 
 # 投稿の実行と重ならないよう、同じ枠で直列化する
 concurrency:
@@ -24,6 +28,8 @@ jobs:
       contents: write
     env:
       DRY_RUN: ${{ github.event.inputs.dry_run }}
+      # 外部 cron からは client_payload.target_date で当日ぶんの作り直しができる
+      TARGET_DATE: ${{ github.event.client_payload.target_date || github.event.inputs.target_date }}
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       # ドキュメント ID は秘密ではないので Variables に置く
       BOARD_DOC_ID: ${{ vars.BOARD_DOC_ID }}
