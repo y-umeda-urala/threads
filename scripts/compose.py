@@ -306,6 +306,10 @@ def find_filled(entries: list[dict], target_date) -> dict[int, dict]:
         scheduled = entry.get("scheduled_at")
         if not isinstance(scheduled, str) or not scheduled.startswith(prefix):
             continue
+        # 12:30 のような枠外の予約が 12:00 の枠を埋めたことにならないよう、
+        # 分が 00 のものだけを「枠が埋まっている」とみなす
+        if scheduled[14:16] != "00":
+            continue
         try:
             hour = int(scheduled[11:13])
         except (ValueError, IndexError):
