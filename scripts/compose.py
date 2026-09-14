@@ -12,6 +12,7 @@
   ANTHROPIC_API_KEY  必須。Anthropic の API キー
   BOARD_DOC_ID       任意。運用ボードの Google ドキュメント ID
   NETA_DOC_ID        任意。ネタ帳の Google ドキュメント ID
+                     （neta/ネタ帳.md があるときは、そちらが優先される）
   ANTHROPIC_MODEL    任意。使うモデル。未指定なら利用可能なものから自動で選ぶ
   DRY_RUN            任意。"true" なら生成結果を表示するだけでファイルを書き換えない
 """
@@ -157,6 +158,24 @@ def fetch_doc(doc_id: str, label: str) -> str:
         return ""
     print(f"{label}: {len(text)} 文字を読み込みました。")
     return text
+
+
+NETA_PATH = Path("neta/ネタ帳.md")
+
+
+def read_neta() -> str:
+    """ネタ帳を読む。リポジトリの中にあれば、それを使う。
+
+    2026-09-14 に置き場所を Google ドキュメントからこのリポジトリへ移した。
+    毎朝の自動収集（.github/workflows/neta-collect.yml）がここに追記する。
+    ファイルが無いときだけ、従来どおり NETA_DOC_ID のドキュメントを読む。
+    移行の途中でも、どちらか読めたほうで動く。
+    """
+    if NETA_PATH.exists():
+        text = NETA_PATH.read_text(encoding="utf-8")
+        print(f"ネタ帳: {NETA_PATH} から {len(text)} 文字を読み込みました。")
+        return text
+    return fetch_doc(os.environ.get("NETA_DOC_ID", "").strip(), "ネタ帳")
 
 
 def fetch_urala_articles(limit: int = 10) -> str:
@@ -532,7 +551,7 @@ def main() -> None:
     print("これから作る枠: " + "、".join(f"{h}:00" for h, *_ in needed))
 
     board = fetch_doc(os.environ.get("BOARD_DOC_ID", "").strip(), "運用ボード")
-    neta = fetch_doc(os.environ.get("NETA_DOC_ID", "").strip(), "ネタ帳")
+    neta = read_neta()
     articles = fetch_urala_articles()
     works = fetch_urala_design_works()
 
