@@ -1,0 +1,65 @@
+name: ネタ帳を埋める
+
+# neta/設定.json の「通す質問」で Web 検索し、出典URLの辿れる出来事だけを
+# neta/ネタ帳.md の「書き足す場所」の下に追記してコミットする。
+#
+# 毎朝 7:00 (JST) = 前日 22:00 (UTC)。外部 cron は要らない。
+# 手で回したいときは Actions タブ → このワークフロー → Run workflow。
+on:
+  schedule:
+    - cron: "0 22 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "ファイルに書かず、集まったものを表示するだけ"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+# 予約画面やほかのワークフローと同じファイルを触るので、重ねて走らせない
+concurrency:
+  group: neta-collect
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: 集めて ネタ帳.md に追記する
+        id: collect
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          DRY_RUN: ${{ inputs.dry_run && '1' || '' }}
+        run: node scripts/neta-collect.mjs | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: コミットする
+        if: ${{ steps.collect.outputs.added != '0' && !inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          TARGET="neta/ネタ帳.md"
+          if git diff --quiet -- "${TARGET}"; then
+            echo "${TARGET} に変更なし。コミットはしません。"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "${TARGET}"
+          git commit -m "chore(neta): $(TZ=Asia/Tokyo date +%F) のぶんを追記"
+          # 予約画面からの記録と衝突しうるので、rebase してから push する
+          for attempt in 1 2 3 4; do
+            if git pull --rebase origin "${GITHUB_REF_NAME}" && git push; then
+              exit 0
+            fi
+            wait=$((2 ** attempt))
+            echo "push に失敗。${wait} 秒待って再試行します。"
+            sleep "${wait}"
+          done
+          exit 1
