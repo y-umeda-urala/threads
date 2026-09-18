@@ -6,6 +6,9 @@ name: ネタ帳を埋める
 # 毎朝 7:00 (JST) = 前日 22:00 (UTC)。外部 cron は要らない。
 # 手で回したいときは Actions タブ → このワークフロー → Run workflow。
 on:
+  # 外部 cron（cron-job.org）から叩く入口。GitHub の schedule は遅延するため。
+  repository_dispatch:
+    types: [neta-collect]
   schedule:
     - cron: "0 22 * * *"
   workflow_dispatch:
