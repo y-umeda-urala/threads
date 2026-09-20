@@ -184,6 +184,8 @@ def fetch_threads_metrics(post_ids: list[str]) -> dict[str, dict]:
     if not token:
         fail("THREADS_ACCESS_TOKEN が未設定です。")
     metrics = {}
+    failed: list[str] = []
+    token_broken = False
     for post_id in post_ids:
         params = urllib.parse.urlencode(
             {"metric": "views,likes,replies,reposts,quotes", "access_token": token}
@@ -195,11 +197,17 @@ def fetch_threads_metrics(post_ids: list[str]) -> dict[str, dict]:
         except urllib.error.HTTPError as exc:
             detail = exc.read().decode("utf-8", errors="replace")[:300]
             warn(f"{post_id}: insights を取れませんでした ({exc.code}) {detail}")
-            if exc.code in (400, 403) and "permission" in detail.lower():
-                fail(
-                    "insights の権限がありません。Meta の Threads アプリに threads_manage_insights を追加し、"
-                    "アクセストークンを取り直してください。"
-                )
+            failed.append(post_id)
+            # Meta は「消された投稿」にも「権限がない」にも同じ文面を返す
+            # （code 100 / subcode 33 の "cannot be loaded due to missing permissions..."）。
+            # 文面で判定すると、投稿を1本消しただけで計測が全部止まる。
+            # 本当にトークンの問題なのは code 10 / 190 / 200 のときだけ。
+            try:
+                error = json.loads(detail).get("error", {})
+            except Exception:  # noqa: BLE001
+                error = {}
+            if error.get("code") in (10, 190, 200):
+                token_broken = True
             continue
         except Exception as exc:  # noqa: BLE001
             warn(f"{post_id}: 通信に失敗しました ({exc})")
@@ -215,6 +223,21 @@ def fetch_threads_metrics(post_ids: list[str]) -> dict[str, dict]:
             if name is not None:
                 row[name] = int(value or 0)
         metrics[post_id] = row
+    if post_ids and not metrics:
+        if token_broken:
+            fail(
+                "insights の権限がありません。Meta の Threads アプリに threads_manage_insights を追加し、"
+                "アクセストークンを取り直してください。"
+            )
+        fail(
+            f"{len(post_ids)} 件すべてで insights を取れませんでした。"
+            "トークンの期限切れか、アカウントの取り違えが考えられます。"
+        )
+    if failed:
+        warn(
+            f"{len(failed)} 件は insights を取れませんでした（消された投稿など）。"
+            f"残り {len(metrics)} 件で判定します。"
+        )
     return metrics
 
 
