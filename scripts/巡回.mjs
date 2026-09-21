@@ -10,8 +10,9 @@
  */
 
 const 待ち時間 = 20000;
+// そっけない UA だと弾く（あるいは握手で切る）サイトがあるため、ふつうのブラウザに合わせる
 const ユーザーエージェント =
-  'Mozilla/5.0 (compatible; neta-collect/1.0; +https://github.com/y-umeda-urala/threads)';
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36';
 
 export async function 巡回(巡回先) {
   const 何日前まで = 巡回先.何日前まで ?? 10;
@@ -42,7 +43,7 @@ async function RSSを読む(先, 境目, 上限) {
   try {
     xml = await 取る(先.url);
   } catch (e) {
-    return { 名前: 先.名前, items: [], error: String(e.message ?? e).slice(0, 80) };
+    return { 名前: 先.名前, items: [], error: String(e.message ?? e).slice(0, 160) };
   }
 
   const 塊 = [...xml.matchAll(/<(item|entry)\b[\s\S]*?<\/\1>/gi)].map((m) => m[0]);
@@ -107,7 +108,7 @@ async function HTMLを読む(先) {
   try {
     html = await 取る(先.url);
   } catch (e) {
-    return { 名前: 先.名前, items: [], error: String(e.message ?? e).slice(0, 80) };
+    return { 名前: 先.名前, items: [], error: String(e.message ?? e).slice(0, 160) };
   }
   const 形 = new RegExp(先['リンクの形'] ?? '.');
   const 元 = new URL(先.url);
@@ -133,14 +134,39 @@ async function HTMLを読む(先) {
 // ------------------------------------------------------------------ 小物
 
 async function 取る(url) {
-  const 中止 = AbortSignal.timeout ? AbortSignal.timeout(待ち時間) : undefined;
-  const res = await fetch(url, {
-    headers: { 'user-agent': ユーザーエージェント, accept: '*/*' },
-    signal: 中止,
-    redirect: 'follow'
-  });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return await res.text();
+  let 最後のエラー;
+  // 1回目で切られることがあるので、少し待って2回まで試す
+  for (let 回 = 1; 回 <= 3; 回 += 1) {
+    try {
+      const 中止 = AbortSignal.timeout ? AbortSignal.timeout(待ち時間) : undefined;
+      const res = await fetch(url, {
+        headers: {
+          'user-agent': ユーザーエージェント,
+          accept: 'application/rss+xml, application/atom+xml, application/xml;q=0.9, text/html;q=0.8, */*;q=0.5',
+          'accept-language': 'ja,en;q=0.8',
+          'accept-encoding': 'gzip, deflate',
+          connection: 'close'
+        },
+        signal: 中止,
+        redirect: 'follow'
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return await res.text();
+    } catch (e) {
+      最後のエラー = e;
+      if (回 < 3) await new Promise((r) => setTimeout(r, 800 * 回));
+    }
+  }
+  throw new Error(理由(最後のエラー));
+}
+
+/** Node の fetch は何でも「fetch failed」にするので、中の理由まで出す */
+function 理由(e) {
+  const 元 = e?.cause;
+  const 断片 = [e?.message];
+  if (元) 断片.push(元.code ?? '', 元.message ?? '');
+  if (元?.cause) 断片.push(元.cause.code ?? '', 元.cause.message ?? '');
+  return [...new Set(断片.filter(Boolean))].join(' / ');
 }
 
 function ほぐす(s) {
