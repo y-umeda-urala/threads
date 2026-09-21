@@ -188,20 +188,21 @@ async function リストを読む(先, 捨てる語 = []) {
   let 捨てた = 0;
 
   for (const m of 塊) {
-    const 行 = ほぐす(m[1]);
+    const 行 = ほぐす(m[1]).replace(/[０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0));
     if (行.length < 8 || 行.length > 300) continue;
     if (見出しの形 && !見出しの形.test(行)) continue;
 
     let 日付 = '';
-    if (日付の形) {
-      const d = 行.match(日付の形);
-      if (!d) continue; // 日付が無いものは、案内や目次の行なので捨てる
+    const d = 日付の形 ? 行.match(日付の形) : null;
+    if (d) {
       const 年 = Number(d[1]);
       const 月 = Number(d[2]);
       const 日 = Number(d[3] ?? 1);
       const t = new Date(年, 月 - 1, 日);
       if (境目 && t.getTime() < 境目) continue;
       日付 = `${年}-${String(月).padStart(2, '0')}-${String(日).padStart(2, '0')}`;
+    } else if (先['日付が必要'] === true) {
+      continue;
     }
     if (見た.has(行)) continue;
     見た.add(行);
@@ -218,7 +219,8 @@ async function リストを読む(先, 捨てる語 = []) {
       出典固定: 先['出典を一覧ページにする'] === true
     });
   }
-  items.sort((a, b) => (b.日付 || '').localeCompare(a.日付 || ''));
+  // 日付が揃わない一覧では、並べ替えずにページの順（新しい順）をそのまま使う
+  if (先['日付が必要'] === true) items.sort((a, b) => (b.日付 || '').localeCompare(a.日付 || ''));
   return { 名前: 先.名前, items: items.slice(0, 先['最大件数'] ?? 20), 捨てた };
 }
 
