@@ -255,6 +255,19 @@ async function claudeに聞く(prompt) {
     throw new Error(`Anthropic API が ${res.status} を返しました: ${(await res.text()).slice(0, 500)}`);
   }
   const data = await res.json();
+
+  // 実際にいくら使ったかを毎回残す。見積りでなく実測で判断するため。
+  const u = data.usage ?? {};
+  const 検索した = u.server_tool_use?.web_search_requests ?? 0;
+  const 入力 = u.input_tokens ?? 0;
+  const 出力 = u.output_tokens ?? 0;
+  // Sonnet 5: 入力 $2/Mtok、出力 $10/Mtok、Web検索 $10/1000回（2026-09 時点）
+  const 概算 = (入力 / 1e6) * 2 + (出力 / 1e6) * 10 + 検索した * 0.01;
+  console.log(
+    `使った分: 入力 ${入力} tok ／ 出力 ${出力} tok ／ Web検索 ${検索した} 回` +
+      `（上限 ${設定.検索回数 ?? 8}）／ 概算 $${概算.toFixed(4)}`
+  );
+
   return (data.content ?? [])
     .filter((b) => b.type === 'text')
     .map((b) => b.text)
