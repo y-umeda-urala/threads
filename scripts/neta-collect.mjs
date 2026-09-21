@@ -80,6 +80,8 @@ if (existsSync(巡回先パス)) {
     ? 残り.map((c) => `- [${c.名前}]${c.日付 ? ` ${c.日付}` : ''} ${c.タイトル}\n  ${c.url}`).join('\n')
     : '（今日は新しいものがありませんでした）';
 
+  console.log(`候補一覧の分量: ${候補一覧.length} 文字`);
+
   // 巡回の動作確認だけしたいとき。API を叩かずに終わる。
   if (process.env.CRAWL_ONLY === '1') {
     console.log('--- CRAWL_ONLY なので、ここで終わります ---');

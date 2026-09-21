@@ -4,6 +4,16 @@
   "1つの巡回先から渡す最大件数": 6,
   "RSS": [
     {
+      "名前": "福井県（新着）",
+      "区分": "県",
+      "url": "https://www.pref.fukui.lg.jp/news.xml"
+    },
+    {
+      "名前": "福井県（イベント）",
+      "区分": "県",
+      "url": "https://www2.pref.fukui.lg.jp/event/rssgen.php"
+    },
+    {
       "名前": "福井市",
       "区分": "市町",
       "url": "https://www.city.fukui.lg.jp/news.xml"
