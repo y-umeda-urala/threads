@@ -1,0 +1,63 @@
+{
+  "説明": "毎朝ここを直接見に行く。RSS は XML をそのまま読む。HTML はイベント一覧のリンクを拾う。2026-09-21 調査で、全URL実在を確認済み。詳細は プロジェクト claude/45_福井の巡回先リスト_2026-09-21.md",
+  "何日前まで": 10,
+  "1つの巡回先から渡す最大件数": 6,
+  "RSS": [
+    { "名前": "福井市", "区分": "市町", "url": "https://www.city.fukui.lg.jp/news.xml" },
+    { "名前": "敦賀市（イベント）", "区分": "市町", "url": "https://www.city.tsuruga.lg.jp/rss/10/list5.xml" },
+    { "名前": "小浜市", "区分": "市町", "url": "https://www1.city.obama.fukui.jp/news.xml" },
+    { "名前": "大野市", "区分": "市町", "url": "https://www.city.ono.fukui.jp/rss_news.xml" },
+    { "名前": "勝山市（イベント）", "区分": "市町", "url": "https://www.city.katsuyama.fukui.jp/rss/10/list8.xml" },
+    { "名前": "鯖江市", "区分": "市町", "url": "https://www.city.sabae.fukui.jp/rss_news.xml" },
+    { "名前": "あわら市（イベント）", "区分": "市町", "url": "https://www.city.awara.lg.jp/event-into/news.xml" },
+    { "名前": "越前市", "区分": "市町", "url": "https://www.city.echizen.lg.jp/news.xml" },
+    { "名前": "坂井市", "区分": "市町", "url": "https://www.city.fukui-sakai.lg.jp/shinchaku/shinchaku.xml" },
+    { "名前": "永平寺町", "区分": "市町", "url": "https://www.town.eiheiji.lg.jp/news.xml" },
+    { "名前": "池田町", "区分": "市町", "url": "https://www.town.ikeda.fukui.jp/news.xml" },
+    { "名前": "南越前町", "区分": "市町", "url": "https://www.town.minamiechizen.lg.jp/news.xml" },
+    { "名前": "越前町", "区分": "市町", "url": "https://www.town.echizen.fukui.jp/news.xml" },
+    { "名前": "美浜町（イベント）", "区分": "市町", "url": "https://www.town.fukui-mihama.lg.jp/rss/10/list5.xml" },
+    { "名前": "高浜町", "区分": "市町", "url": "https://www.town.takahama.fukui.jp/news.xml" },
+    { "名前": "おおい町", "区分": "市町", "url": "https://www.town.ohi.fukui.jp/news.xml" },
+
+    { "名前": "勝山観光ナビ", "区分": "観光協会", "url": "https://katsuyama-navi.jp/feed/" },
+    { "名前": "さかい旅ナビ（イベント）", "区分": "観光協会", "url": "https://kanko-sakai.com/event/feed/" },
+    { "名前": "あわら市観光協会（イベント）", "区分": "観光協会", "url": "https://awara.info/cat_event/feed/" },
+    { "名前": "敦賀観光協会", "区分": "観光協会", "url": "https://tsuruga-kanko.jp/feed/" },
+    { "名前": "若狭おばま観光協会（イベント）", "区分": "観光協会", "url": "https://wakasa-obama.jp/event/feed/" },
+    { "名前": "越前おおの観光", "区分": "観光協会", "url": "https://www.ono-kankou.jp/feed/" },
+    { "名前": "河野観光協会", "区分": "観光協会", "url": "https://kouno-fukui.jp/feed/" },
+    { "名前": "若狭美浜観光協会", "区分": "観光協会", "url": "https://wakasa-mihama.jp/feed/" },
+    { "名前": "若狭高浜観光協会", "区分": "観光協会", "url": "https://wakasa-takahama.jp/feed/" },
+    { "名前": "おおい町観光協会（イベント）", "区分": "観光協会", "url": "https://www.wakasa-ohi.jp/category/event/feed/" },
+    { "名前": "若狭三方五湖観光協会", "区分": "観光協会", "url": "https://www.wakasa-mikatagoko.jp/topics/atom.xml" },
+
+    { "名前": "ハピリンホール／ハピテラス", "区分": "施設", "url": "https://nigiwai.ftmo.co.jp/feed/?post_type=event" },
+    { "名前": "まちづくり福井", "区分": "施設", "url": "https://www.ftmo.co.jp/feed/" },
+    { "名前": "エルパ（イベント）", "区分": "商業施設", "url": "https://lp-lpa.co.jp/events/event/feed/" },
+    { "名前": "アル・プラザ鯖江", "区分": "商業施設", "url": "https://ap-sabae.com/feed.rss" },
+
+    { "名前": "道の駅 うみんぴあ大飯", "区分": "道の駅", "url": "https://michinoeki-ohi.com/?feed=rss2" },
+    { "名前": "道の駅 若狭おばま", "区分": "道の駅", "url": "https://michinoeki-obama.jp/feed/" },
+    { "名前": "道の駅 越前たけふ", "区分": "道の駅", "url": "https://echizen-takefu.jp/feed/" },
+    { "名前": "道の駅 南えちぜん山海里", "区分": "道の駅", "url": "https://kineno-nanjo.com/feed/" },
+    { "名前": "道の駅 越前おおの荒島の郷", "区分": "道の駅", "url": "https://arashimanosato.com/feed/" }
+  ],
+  "HTML": [
+    {
+      "名前": "ふーぽ",
+      "区分": "ポータル",
+      "url": "https://fupo.jp/event/",
+      "リンクの形": "^https://fupo\\.jp/event/[^/]+/$",
+      "最大件数": 25
+    }
+  ],
+  "RSSが無いので検索で補うもの": [
+    "ふくいドットコム（県観光連盟）https://www.fuku-e.com/event/index.html",
+    "福いろ（福井市観光）https://fuku-iro.jp/event/index.html ※ index.html を省くとリダイレクトループ",
+    "ショッピングシティ・ベル https://www.bell.or.jp/event-news.html",
+    "ハピリン（館全体）https://www.happiring.com/event/",
+    "道の駅 越前（越前町の施設全体）https://www.echizenkk.jp/event",
+    "アル・プラザ アミ https://alplaza-ami.jp/news/"
+  ]
+}

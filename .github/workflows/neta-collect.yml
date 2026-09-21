@@ -17,6 +17,10 @@ on:
         description: "ファイルに書かず、集まったものを表示するだけ"
         type: boolean
         default: false
+      crawl_only:
+        description: "巡回先を見に行くところまでで止める（API を叩かない）"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -41,6 +45,7 @@ jobs:
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           DRY_RUN: ${{ inputs.dry_run && '1' || '' }}
+          CRAWL_ONLY: ${{ (inputs.crawl_only || github.event.client_payload.crawl_only) && '1' || '' }}
         run: node scripts/neta-collect.mjs | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: コミットする
