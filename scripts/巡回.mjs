@@ -124,6 +124,10 @@ async function HTMLを読む(先, 捨てる語 = []) {
     return { 名前: 先.名前, items: [], error: String(e.message ?? e).slice(0, 160) };
   }
   const 形 = new RegExp(先['リンクの形'] ?? '.');
+  // 見出しがこの形に合うものだけ拾う（ふーぽ新店速報の「【カフェ】」など）
+  const 見出しの形 = 先['見出しの形'] ? new RegExp(先['見出しの形']) : null;
+  // リンク先が Instagram など、出典に使えない一覧のときは、一覧ページ自体を出典にする
+  const 出典固定 = 先['出典を一覧ページにする'] === true;
   const 元 = new URL(先.url);
   const 見た = new Set();
   const items = [];
@@ -138,12 +142,20 @@ async function HTMLを読む(先, 捨てる語 = []) {
     if (!形.test(url) || 見た.has(url)) continue;
     const タイトル = ほぐす(m[2].replace(/<[^>]+>/g, ' '));
     if (タイトル.length < 4) continue;
+    if (見出しの形 && !見出しの形.test(タイトル)) continue;
     見た.add(url);
     if (捨てるか(タイトル, 捨てる語)) {
       捨てた += 1;
       continue;
     }
-    items.push({ 名前: 先.名前, 区分: 先.区分 ?? '', タイトル: タイトル.slice(0, 120), url, 日付: '' });
+    items.push({
+      名前: 先.名前,
+      区分: 先.区分 ?? '',
+      タイトル: タイトル.slice(0, 120),
+      url: 出典固定 ? 先.url : url,
+      日付: '',
+      出典固定
+    });
     if (items.length >= (先.最大件数 ?? 20)) break;
   }
   return { 名前: 先.名前, items, 捨てた };
