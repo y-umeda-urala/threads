@@ -18,27 +18,35 @@ export async function 巡回(巡回先) {
   const 何日前まで = 巡回先.何日前まで ?? 10;
   const 上限 = 巡回先['1つの巡回先から渡す最大件数'] ?? 6;
   const 境目 = Date.now() - 何日前まで * 24 * 60 * 60 * 1000;
+  const 捨てる語 = 巡回先['見出しに入っていたら捨てる'] ?? [];
 
   const 仕事 = [
-    ...(巡回先.RSS ?? []).map((s) => RSSを読む(s, 境目, 上限)),
-    ...(巡回先.HTML ?? []).map((s) => HTMLを読む(s))
+    ...(巡回先.RSS ?? []).map((s) => RSSを読む(s, 境目, 上限, 捨てる語)),
+    ...(巡回先.HTML ?? []).map((s) => HTMLを読む(s, 捨てる語))
   ];
   const 結果 = await Promise.all(仕事);
 
   const 候補 = [];
   const 取れた = [];
   const 取れなかった = [];
+  let 捨てた = 0;
   for (const r of 結果) {
     if (r.error) 取れなかった.push(`${r.名前}: ${r.error}`);
     else 取れた.push(`${r.名前}: ${r.items.length}件`);
+    捨てた += r.捨てた ?? 0;
     候補.push(...r.items);
   }
-  return { 候補, 取れた, 取れなかった };
+  return { 候補, 取れた, 取れなかった, 捨てた };
+}
+
+/** 行政のお知らせや、終わった催しを落とす */
+function 捨てるか(タイトル, 捨てる語) {
+  return 捨てる語.some((w) => タイトル.includes(w));
 }
 
 // ------------------------------------------------------------------ RSS
 
-async function RSSを読む(先, 境目, 上限) {
+async function RSSを読む(先, 境目, 上限, 捨てる語 = []) {
   let xml;
   try {
     xml = await 取る(先.url);
@@ -48,11 +56,16 @@ async function RSSを読む(先, 境目, 上限) {
 
   const 塊 = [...xml.matchAll(/<(item|entry)\b[\s\S]*?<\/\1>/gi)].map((m) => m[0]);
   const items = [];
+  let 捨てた = 0;
   for (const b of 塊) {
     const タイトル = 中身(b, 'title');
     const url = リンク(b);
     const 日付 = 日付を読む(b);
     if (!タイトル || !url) continue;
+    if (捨てるか(タイトル, 捨てる語)) {
+      捨てた += 1;
+      continue;
+    }
     // 日付が読めないものは、古いかどうか判断できないので残す
     if (日付 && 日付.getTime() < 境目) continue;
     items.push({
@@ -64,7 +77,7 @@ async function RSSを読む(先, 境目, 上限) {
     });
   }
   items.sort((a, b) => (b.日付 || '').localeCompare(a.日付 || ''));
-  return { 名前: 先.名前, items: items.slice(0, 上限) };
+  return { 名前: 先.名前, items: items.slice(0, 上限), 捨てた };
 }
 
 function 中身(塊, タグ) {
@@ -103,7 +116,7 @@ function 日付を読む(塊) {
 
 // ------------------------------------------------------------------ HTML
 
-async function HTMLを読む(先) {
+async function HTMLを読む(先, 捨てる語 = []) {
   let html;
   try {
     html = await 取る(先.url);
@@ -114,6 +127,7 @@ async function HTMLを読む(先) {
   const 元 = new URL(先.url);
   const 見た = new Set();
   const items = [];
+  let 捨てた = 0;
   for (const m of html.matchAll(/<a\b[^>]*href\s*=\s*["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi)) {
     let url;
     try {
@@ -125,10 +139,14 @@ async function HTMLを読む(先) {
     const タイトル = ほぐす(m[2].replace(/<[^>]+>/g, ' '));
     if (タイトル.length < 4) continue;
     見た.add(url);
+    if (捨てるか(タイトル, 捨てる語)) {
+      捨てた += 1;
+      continue;
+    }
     items.push({ 名前: 先.名前, 区分: 先.区分 ?? '', タイトル: タイトル.slice(0, 120), url, 日付: '' });
     if (items.length >= (先.最大件数 ?? 20)) break;
   }
-  return { 名前: 先.名前, items };
+  return { 名前: 先.名前, items, 捨てた };
 }
 
 // ------------------------------------------------------------------ 小物

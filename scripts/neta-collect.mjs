@@ -66,8 +66,8 @@ let 候補件数 = 0;
 
 if (existsSync(巡回先パス)) {
   const 巡回先 = JSON.parse(readFileSync(巡回先パス, 'utf8'));
-  const { 候補, 取れた, 取れなかった } = await 巡回(巡回先);
-  console.log(`巡回: ${取れた.length}件の巡回先から取得、${取れなかった.length}件が失敗`);
+  const { 候補, 取れた, 取れなかった, 捨てた } = await 巡回(巡回先);
+  console.log(`巡回: ${取れた.length}件の巡回先から取得、${取れなかった.length}件が失敗、見出しで${捨てた ?? 0}件を除外`);
   for (const s of 取れなかった) console.log(`  取れず: ${s}`);
 
   // すでにネタ帳に URL がある候補は外す
