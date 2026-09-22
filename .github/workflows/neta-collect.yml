@@ -48,8 +48,10 @@ jobs:
           CRAWL_ONLY: ${{ (inputs.crawl_only || github.event.client_payload.crawl_only) && '1' || '' }}
         run: node scripts/neta-collect.mjs | tee -a "$GITHUB_STEP_SUMMARY"
 
+      # 追記が0件でも、「調べてほしいもの」欄から解決ぶんを消しただけの変更がありうる。
+      # 変更の有無はステップの中で git diff で見ているので、ここでは絞らない。
       - name: コミットする
-        if: ${{ steps.collect.outputs.added != '0' && !inputs.dry_run }}
+        if: ${{ !inputs.dry_run }}
         run: |
           set -euo pipefail
           TARGET="neta/ネタ帳.md"
