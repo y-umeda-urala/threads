@@ -48,13 +48,14 @@ jobs:
             echo "${TARGET} が無いので、コミットはしません。"
             exit 0
           fi
-          if git diff --quiet -- "${TARGET}"; then
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # 初回は未追跡なので git diff では拾えない。add してから index を見る
+          git add "${TARGET}"
+          if git diff --cached --quiet -- "${TARGET}"; then
             echo "${TARGET} に変更なし。コミットはしません。"
             exit 0
           fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add "${TARGET}"
           git commit -m "chore(balance): $(TZ=Asia/Tokyo date '+%F %H:%M') の残高チェック結果"
           for attempt in 1 2 3 4; do
             if git pull --rebase origin "${GITHUB_REF_NAME}" && git push; then
