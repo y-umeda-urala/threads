@@ -679,22 +679,52 @@ def ask(api_key: str, model: str, prompt: str) -> str:
     ).strip()
 
 
-def generate(api_key: str, model: str, prompt: str, expected: int) -> list[dict]:
-    reminder = (
-        "\n\n---\n直前の返答は形式が守られていませんでした。"
-        "説明や ``` を付けず、@@@POST 〜 @@@END の組だけを返してください。"
-    )
-    for attempt in (1, 2):
-        text = ask(api_key, model, prompt if attempt == 1 else prompt + reminder)
-        posts = parse_posts(text)
-        if len(posts) == expected:
-            return posts
-        print(f"::warning::{attempt} 回目: {expected} 本のはずが {len(posts)} 本でした。")
-        if attempt == 2:
-            fail(
-                f"{expected} 本を作れませんでした（2 回試行）。\n--- 生の出力 ---\n{text[:1200]}"
+def generate(api_key: str, model: str, prompt: str, hours: list[int]) -> list[dict]:
+    """足りない枠だけを聞き直しながら、作れたぶんを集める。
+
+    2026-09-23 まで「全部そろわなければ失敗」だった。9本できていても全部捨てて
+    翌日の投稿が0本になる事故が2晩続いたため、**作れたぶんは使う**ように変えた。
+    半分に満たないときだけ失敗させる。
+    """
+    expected = len(hours)
+    集まった: dict[int, dict] = {}
+
+    for attempt in (1, 2, 3):
+        if attempt == 1:
+            この回の指示 = prompt
+        else:
+            残り = [h for h in hours if h not in 集まった]
+            この回の指示 = (
+                prompt
+                + "\n\n---\n直前の返答では枠が足りませんでした。"
+                + "**足りないのは "
+                + "、".join(f"{h}:00" for h in 残り)
+                + " です。この枠だけを作ってください。**"
+                + "説明や ``` を付けず、@@@POST 〜 @@@END の組だけを返してください。"
             )
-    return []
+        text = ask(api_key, model, この回の指示)
+        for post in parse_posts(text):
+            try:
+                hour = int(post["hour"])
+            except (TypeError, ValueError):
+                continue
+            if hour in hours and hour not in 集まった and (post.get("text") or "").strip():
+                集まった[hour] = post
+        if len(集まった) >= expected:
+            return [集まった[h] for h in hours]
+        print(f"::warning::{attempt} 回目まで: {expected} 本のはずが {len(集まった)} 本です。")
+
+    足りない = [h for h in hours if h not in 集まった]
+    if len(集まった) < max(1, (expected + 1) // 2):
+        fail(
+            f"{expected} 本のうち {len(集まった)} 本しか作れませんでした（3 回試行）。"
+            f"半分に満たないので中止します。\n--- 最後の生の出力 ---\n{text[:1200]}"
+        )
+    print(
+        f"::warning::{expected} 本のうち {len(集まった)} 本で進めます。"
+        f"作れなかった枠: " + "、".join(f"{h}:00" for h in 足りない)
+    )
+    return [集まった[h] for h in hours if h in 集まった]
 
 
 def new_id(hour: int, existing: set[str]) -> str:
@@ -757,14 +787,16 @@ def main() -> None:
 
     model = pick_model(api_key)
     prompt = build_prompt(board, neta, articles, works, recent_texts(entries), target_date, needed, filled)
-    posts = generate(api_key, model, prompt, len(needed))
+    posts = generate(api_key, model, prompt, [hour for hour, *_ in needed])
 
     by_hour = {int(p["hour"]): p for p in posts}
     new_lines = []
     for hour, *_ in needed:
         post = by_hour.get(hour)
         if not post:
-            fail(f"{hour}:00 の投稿が返ってきませんでした。")
+            # 3回聞いても返らなかった枠。ここで止めると他の枠まで捨てることになる
+            print(f"::warning::{hour}:00 は作れませんでした。この枠は空のままにします。")
+            continue
         text = (post.get("text") or "").strip()
         if not text:
             fail(f"{hour}:00 の本文が空です。")
