@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import json
+import re
 import urllib.error
 import urllib.request
 from datetime import date
@@ -163,3 +164,199 @@ def 投稿用にする(選んだ: dict) -> dict:
         "links": [f"【PR】{宿['名']}\n{宿['url']}" for 宿 in 宿たち],
         "raw": 選んだ,
     }
+
+
+# ---------------------------------------------------------------
+# まとめの型（2026-09-23 代表指示）
+# ---------------------------------------------------------------
+# 代表が見つけた、よく伸びている楽天トラベルの投稿の形に合わせる。
+#   1本目 … 「【福井】◯◯な宿7選」＋ 宿名の一覧だけ。リンクを入れない
+#   返信  … 冒頭に「PR」。宿ごとに一文とリンク。2軒ずつ
+#   最後  … クーポンのリンク（あれば）
+# 本文にリンクを入れると表示が落ちるので、リンクは返信に置く。
+# 一覧は保存されやすく、返信まで読んだ人が踏む、という流れ。
+# ---------------------------------------------------------------
+
+# エリアごとの絵文字。土地が分かるものを選ぶ（飾りではなく手がかりにする）。
+エリアの絵文字 = {
+    "福井市": "🏙", "あわら・三国": "♨️", "坂井・丸岡": "🏯", "永平寺": "🛕",
+    "勝山": "🦕", "大野": "⛰", "鯖江": "👓", "越前市": "🖌",
+    "越前海岸": "🌊", "南越前": "🚃", "敦賀": "⚓", "美浜": "🏖",
+    "若狭三方": "🦆", "小浜": "🐟", "おおい": "🌲", "高浜": "🏝",
+}
+丸数字 = "①②③④⑤⑥⑦⑧⑨⑩"
+
+クーポンの置き場 = Path("neta/宿_クーポン.jsonl")
+クーポンのURL = (
+    "https://raw.githubusercontent.com/yasu29fr/x-yu__fukui-bot/main/"
+    "neta/%E5%AE%BF_%E3%82%AF%E3%83%BC%E3%83%9D%E3%83%B3.jsonl"
+)
+
+
+def 市町(宿: dict) -> str:
+    """住所から市町名だけ取り出す。取れなければエリア名。
+
+    「丹生郡越前町」のような郡つきは、町だけにする（読む人に要るのは町名）。
+    """
+    住 = str(宿.get("住所") or "")
+    m = re.search(r"福井県(?:[^\d０-９]*?郡)?([^\d０-９]+?[市町村])", 住)
+    return m.group(1) if m else str(宿.get("エリア") or "福井")
+
+
+# 宿名のうしろに付く運営会社の名前。一覧に並べると読みにくいので外す。
+# 宿そのものの名前は変えない（別の宿と取り違えないため、前半はそのまま）。
+運営の名 = re.compile(r"[（(][^（）()]*(?:グループ|ホテルズ|ＢＢＨ|チェーン|旧[：:])[^（）()]*[）)]\s*$")
+
+
+def 見せる名(宿: dict) -> str:
+    """一覧や返信に出す宿の名前。"""
+    名 = str(宿.get("名") or "").strip()
+    名 = 運営の名.sub("", 名).strip()
+    return 名 or str(宿.get("名") or "")
+
+
+def 一文(宿: dict, 切り口: dict | None = None, 上限: int = 42) -> str:
+    """楽天トラベルに載っている紹介文から、その宿の一文を作る。
+
+    宿が自分で書いた文なので、こちらで言い換えない。切って並べるだけ。
+    今日の切り口に触れている一節があれば、そこを選ぶ。
+    「サウナがある宿」の紹介で WOWOW の話が出てくると、読む人が困るため。
+    """
+    s = str(宿.get("特色") or "").strip()
+    s = re.sub(r"[■★☆◆▼▲●○【】\[\]]+", " ", s)
+    s = re.sub(r"\s+", " ", s).strip(" 　-・/")
+    if not s:
+        return ""
+    # 「。」「！」で区切って、節ごとに見る
+    節 = [x.strip(" 　、・") for x in re.split(r"(?<=[。！])", s) if x.strip(" 　、・")]
+    語 = [str(w) for w in ((切り口 or {}).get("探す語") or [])]
+    選 = next((x for x in 節 if any(w in x for w in 語)), None) if 語 else None
+    if 選 is None:
+        # 紹介文が今日の切り口に触れていないとき。
+        # 「サウナがある宿」に WOWOW の話を出すと読む人が困るので、
+        # 当てはまった中身（館内設備など）をそのまま一文にする。
+        事実 = str(宿.get("この切り口の事実") or "").strip()
+        if 事実:
+            # 事実だけだと「浴衣」の一語が7軒ぶん並んで、名簿のようになる。
+            # 短いときは、宿の紹介文の頭を足して、宿ごとの違いが見えるようにする。
+            もと = 節[0] if 節 else ""
+            if len(事実) <= 14 and もと:
+                足す = もと[: max(0, 上限 - len(事実) - 1)].strip(" 　、・").rstrip("。！")
+                if len(足す) >= 8:
+                    return f"{事実}。{足す}"
+            return 事実[:上限].strip(" 　、・")
+        選 = 節[0] if 節 else s
+    # 短すぎるときは次の節も足す
+    i = 節.index(選) if 選 in 節 else 0
+    while len(選) < 18 and i + 1 < len(節) and len(選) + len(節[i + 1]) <= 上限:
+        i += 1
+        選 = 選 + 節[i]
+    if len(選) <= 上限:
+        return 選.rstrip("。！")
+    切 = 選[:上限]
+    区 = max(切.rfind("、"), 切.rfind(" "), 切.rfind("・"))
+    return (切[:区] if 区 > 14 else 切).strip(" 　、・")
+
+
+def クーポンを読む() -> list[dict]:
+    """手で登録したクーポンのリンク。無ければ空。
+
+    楽天アフィリエイトのキャンペーンのリンクは管理画面でしか作れないので、
+    ここは自動で増えない。代表が作ったものを neta/宿_クーポン.jsonl に入れる。
+    形: {"名":"ホテル・温泉宿のクーポン","url":"https://a.r10.to/xxxx","いつ":"5と0のつく日"}
+        「いつ」は "5と0のつく日" か "いつでも"。
+    """
+    text = ""
+    if クーポンの置き場.exists():
+        text = クーポンの置き場.read_text(encoding="utf-8")
+    else:
+        try:
+            req = urllib.request.Request(クーポンのURL, headers={"User-Agent": "compose"})
+            with urllib.request.urlopen(req, timeout=30) as res:
+                text = res.read().decode("utf-8")
+        except (urllib.error.URLError, TimeoutError, OSError):
+            return []
+    出 = []
+    for 行 in text.splitlines():
+        行 = 行.strip()
+        if not 行 or 行.startswith("#"):
+            continue
+        try:
+            x = json.loads(行)
+        except json.JSONDecodeError:
+            continue
+        if x.get("url") and x.get("名"):
+            出.append(x)
+    return 出
+
+
+def 今日のまとめ(対象日: date, 宿たち: list[dict] | None = None,
+              いくつ: int = 7) -> dict | None:
+    """その日のまとめ投稿の材料を返す。
+
+    一覧の形にするので、当てはまる宿が少ない切り口は飛ばす
+    （比べる形の 今日の切り口 は 2 軒でよかったが、こちらは 5 軒要る）。
+    """
+    宿たち = 読む() if 宿たち is None else 宿たち
+    if not 宿たち:
+        return None
+    日数 = (対象日 - 起点).days
+    最低 = min(5, いくつ)
+    for i in range(len(切り口たち)):
+        き = 切り口たち[(日数 + i) % len(切り口たち)]
+        合う = []
+        for 宿 in sorted(宿たち, key=lambda x: str(x.get("番号"))):
+            事実 = 当てはまる(き, 宿)
+            if 事実:
+                合う.append({**宿, "この切り口の事実": 事実})
+        if len(合う) < 最低:
+            continue
+        ずらし = 日数 % len(合う)
+        並べ直し = 合う[ずらし:] + 合う[:ずらし]
+        # エリアがばらけるように、まず違うエリアから1軒ずつ拾う
+        選ぶ, 見た = [], set()
+        for 宿 in 並べ直し:
+            if 宿.get("エリア") in 見た:
+                continue
+            選ぶ.append(宿)
+            見た.add(宿.get("エリア"))
+            if len(選ぶ) >= いくつ:
+                break
+        for 宿 in 並べ直し:  # 足りなければ同じエリアからも足す
+            if len(選ぶ) >= いくつ:
+                break
+            if 宿 not in 選ぶ:
+                選ぶ.append(宿)
+        return {"切り口": き, "宿": 選ぶ}
+    return None
+
+
+def 一覧の行(まとめ: dict) -> list[str]:
+    """本文に並べる一覧。リンクは入れない。"""
+    出 = []
+    for i, 宿 in enumerate(まとめ["宿"]):
+        絵 = エリアの絵文字.get(str(宿.get("エリア")), "📍")
+        出.append(f"{丸数字[i]} {絵} {見せる名(宿)}（{市町(宿)}）")
+    return 出
+
+
+def _とじる(s: str) -> str:
+    """切った拍子に開いたままになった括弧を落とす。"""
+    for 開, 閉 in (("「", "」"), ("（", "）"), ("(", ")"), ("【", "】")):
+        while s.count(開) > s.count(閉):
+            i = s.rfind(開)
+            if i < 0:
+                break
+            s = (s[:i] + s[i + 1:]).strip(" 　、・")
+    return s
+
+
+def 返信の行(まとめ: dict) -> list[str]:
+    """返信に並べる、宿ごとの一文とリンク。1軒で1つ。"""
+    出 = []
+    for i, 宿 in enumerate(まとめ["宿"]):
+        説 = _とじる(一文(宿, まとめ.get("切り口")))
+        頭 = f"{丸数字[i]} {見せる名(宿)}（{市町(宿)}"
+        頭 += f"。{説}）" if 説 else "）"
+        出.append(f"{頭}\n{宿['url']}")
+    return 出
