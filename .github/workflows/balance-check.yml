@@ -1,0 +1,25 @@
+name: 残高チェック
+
+# Anthropic の API がいま呼べるかを、いちばん小さいリクエストで確かめる。
+# 残高が切れると 生成・収集・レビュー が全部止まり、キューが空のまま翌日になる。
+# 20:00 の生成より前に気づけるよう、毎日 19:30 JST に回す。
+on:
+  repository_dispatch:
+    types: [balance-check]
+  schedule:
+    - cron: "30 10 * * *"   # 19:30 JST
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: API が呼べるか確かめる
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ACCOUNT_LABEL: ${{ github.repository }}
+        run: node scripts/balance-check.mjs
