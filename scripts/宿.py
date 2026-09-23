@@ -186,6 +186,69 @@ def 投稿用にする(選んだ: dict) -> dict:
 }
 丸数字 = "①②③④⑤⑥⑦⑧⑨⑩"
 
+短縮の置き場 = Path("neta/宿_短縮.jsonl")
+短縮のURL = (
+    "https://raw.githubusercontent.com/yasu29fr/x-yu__fukui-bot/main/"
+    "neta/%E5%AE%BF_%E7%9F%AD%E7%B8%AE.jsonl"
+)
+
+
+def _行を読む(置き場: Path, url: str) -> list[dict]:
+    """jsonl を手元か https から読む。# で始まる行は飛ばす。"""
+    if 置き場.exists():
+        text = 置き場.read_text(encoding="utf-8")
+    else:
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "compose"})
+            with urllib.request.urlopen(req, timeout=30) as res:
+                text = res.read().decode("utf-8")
+        except (urllib.error.URLError, TimeoutError, OSError):
+            return []
+    出 = []
+    for 行 in text.splitlines():
+        行 = 行.strip()
+        if not 行 or 行.startswith("#"):
+            continue
+        try:
+            出.append(json.loads(行))
+        except json.JSONDecodeError:
+            continue
+    return 出
+
+
+def 短縮を読む() -> dict[int, str]:
+    """施設番号 → 短縮URL。
+
+    楽天アフィリエイトの短縮URLは管理画面でしか作れないので、ここは自動で増えない。
+    代表が作ったものを neta/宿_短縮.jsonl に入れる。
+    形: {"番号":2128,"名":"アパホテル〈福井片町〉","url":"https://a.r10.to/xxxxxx"}
+    「名」は人が見て確かめるためのもので、突き合わせには使わない（番号で引く）。
+    無い宿は、これまで通り長いリンクを使う。混ざっていてもかまわない。
+    """
+    出 = {}
+    for x in _行を読む(短縮の置き場, 短縮のURL):
+        try:
+            番 = int(x.get("番号"))
+        except (TypeError, ValueError):
+            continue
+        u = str(x.get("url") or "").strip()
+        if 番 and u.startswith("https://a.r10.to/"):
+            出[番] = u
+    return 出
+
+
+def 宿のリンク先(宿: dict, 短縮: dict[int, str] | None = None) -> str:
+    """その宿に貼るURL。短縮があればそちら、無ければ長いほう。"""
+    if 短縮:
+        try:
+            u = 短縮.get(int(宿.get("番号")))
+        except (TypeError, ValueError):
+            u = None
+        if u:
+            return u
+    return str(宿.get("url") or "")
+
+
 クーポンの置き場 = Path("neta/宿_クーポン.jsonl")
 クーポンのURL = (
     "https://raw.githubusercontent.com/yasu29fr/x-yu__fukui-bot/main/"
@@ -266,28 +329,10 @@ def クーポンを読む() -> list[dict]:
     形: {"名":"ホテル・温泉宿のクーポン","url":"https://a.r10.to/xxxx","いつ":"5と0のつく日"}
         「いつ」は "5と0のつく日" か "いつでも"。
     """
-    text = ""
-    if クーポンの置き場.exists():
-        text = クーポンの置き場.read_text(encoding="utf-8")
-    else:
-        try:
-            req = urllib.request.Request(クーポンのURL, headers={"User-Agent": "compose"})
-            with urllib.request.urlopen(req, timeout=30) as res:
-                text = res.read().decode("utf-8")
-        except (urllib.error.URLError, TimeoutError, OSError):
-            return []
-    出 = []
-    for 行 in text.splitlines():
-        行 = 行.strip()
-        if not 行 or 行.startswith("#"):
-            continue
-        try:
-            x = json.loads(行)
-        except json.JSONDecodeError:
-            continue
-        if x.get("url") and x.get("名"):
-            出.append(x)
-    return 出
+    return [
+        x for x in _行を読む(クーポンの置き場, クーポンのURL)
+        if x.get("url") and x.get("名")
+    ]
 
 
 def 今日のまとめ(対象日: date, 宿たち: list[dict] | None = None,
@@ -353,10 +398,11 @@ def _とじる(s: str) -> str:
 
 def 返信の行(まとめ: dict) -> list[str]:
     """返信に並べる、宿ごとの一文とリンク。1軒で1つ。"""
+    短縮 = 短縮を読む()
     出 = []
     for i, 宿 in enumerate(まとめ["宿"]):
         説 = _とじる(一文(宿, まとめ.get("切り口")))
         頭 = f"{丸数字[i]} {見せる名(宿)}（{市町(宿)}"
         頭 += f"。{説}）" if 説 else "）"
-        出.append(f"{頭}\n{宿['url']}")
+        出.append(f"{頭}\n{宿のリンク先(宿, 短縮)}")
     return 出
