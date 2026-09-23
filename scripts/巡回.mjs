@@ -20,14 +20,17 @@ export async function 巡回(巡回先) {
   const 境目 = Date.now() - 何日前まで * 24 * 60 * 60 * 1000;
   const 捨てる語 = 巡回先['見出しに入っていたら捨てる'] ?? [];
 
+  // 関数のまま持っておき、少しずつ実行する（配列に入れた時点では走らせない）
   const 仕事 = [
-    ...(巡回先.RSS ?? []).map((s) => RSSを読む(s, 境目, 上限, 捨てる語)),
-    ...(巡回先.HTML ?? []).map((s) =>
+    ...(巡回先.RSS ?? []).map((s) => () => RSSを読む(s, 境目, 上限, 捨てる語)),
+    ...(巡回先.HTML ?? []).map((s) => () =>
       s['拾い方'] === 'リスト' ? リストを読む(s, 捨てる語) : HTMLを読む(s, 捨てる語)
     ),
-    ...(巡回先['よそのネタ帳'] ?? []).map((s) => ネタ帳を読む(s, 捨てる語))
+    ...(巡回先['よそのネタ帳'] ?? []).map((s) => () => ネタ帳を読む(s, 捨てる語))
   ];
-  const 結果 = await Promise.all(仕事);
+  // 一度に全部つなぐと、相手側で接続が詰まって落ちる（44本にしたら11本が
+  // UND_ERR_CONNECT_TIMEOUT になった）。同時に走らせる数を絞る。
+  const 結果 = await 少しずつ(仕事, 8);
 
   const 候補 = [];
   const 取れた = [];
@@ -40,6 +43,21 @@ export async function 巡回(巡回先) {
     候補.push(...r.items);
   }
   return { 候補, 取れた, 取れなかった, 捨てた };
+}
+
+/** 同時に走らせる数を絞って、順に片づける */
+async function 少しずつ(仕事, 同時) {
+  const 結果 = new Array(仕事.length);
+  let 次 = 0;
+  const 走者 = Array.from({ length: Math.min(同時, 仕事.length) }, async () => {
+    while (次 < 仕事.length) {
+      const i = 次;
+      次 += 1;
+      結果[i] = await 仕事[i]();
+    }
+  });
+  await Promise.all(走者);
+  return 結果;
 }
 
 /** 行政のお知らせや、終わった催しを落とす */
