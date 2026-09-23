@@ -179,6 +179,9 @@ async function リストを読む(先, 捨てる語 = []) {
   const 要素 = 先['要素'] ?? 'li';
   const 見出しの形 = 先['見出しの形'] ? new RegExp(先['見出しの形']) : null;
   const 日付の形 = 先['日付の形'] ? new RegExp(先['日付の形']) : null;
+  const リンクの形 = 先['リンクの形'] ? new RegExp(先['リンクの形']) : null;
+  const 出典固定 = 先['出典を一覧ページにする'] === true;
+  const 元 = new URL(先.url);
   const 境目 = 先['何日前まで']
     ? Date.now() - 先['何日前まで'] * 24 * 60 * 60 * 1000
     : null;
@@ -205,6 +208,24 @@ async function リストを読む(先, 捨てる語 = []) {
     } else if (先['日付が必要'] === true) {
       continue;
     }
+    // 出典を固定しない先では、要素の中のリンクを出典に使う
+    let url = 先.url;
+    if (!出典固定) {
+      url = '';
+      for (const a of m[1].matchAll(/href\s*=\s*["']([^"']+)["']/gi)) {
+        let u;
+        try {
+          u = new URL(a[1], 元).toString();
+        } catch {
+          continue;
+        }
+        if (!リンクの形 || リンクの形.test(u)) {
+          url = u;
+          break;
+        }
+      }
+      if (!url) continue; // 記事へのリンクが無い行は、目次や案内なので捨てる
+    }
     if (見た.has(行)) continue;
     見た.add(行);
     if (捨てるか(行, 捨てる語)) {
@@ -215,9 +236,9 @@ async function リストを読む(先, 捨てる語 = []) {
       名前: 先.名前,
       区分: 先.区分 ?? '',
       タイトル: 行.slice(0, 160),
-      url: 先.url,
+      url,
       日付,
-      出典固定: 先['出典を一覧ページにする'] === true
+      出典固定
     });
   }
   // 日付が揃わない一覧では、並べ替えずにページの順（新しい順）をそのまま使う
