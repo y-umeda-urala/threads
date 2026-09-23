@@ -1,0 +1,33 @@
+name: 楽天キーの確認だけ
+
+# 楽天ウェブサービスのキーがこのリポジトリで使えるかを見るだけ。
+# ファイルは書かない。投稿もしない。手で回すときだけ動く。
+#
+# このアカウントで商品紹介をやると決めたら、
+# X・yu にある scripts/商品を取る.mjs と product-fetch.yml を持ってくる。
+# やらないと決めたら、このファイルと scripts/楽天キーを試す.mjs を消してよい。
+on:
+  workflow_dispatch:
+  repository_dispatch:
+    types: [rakuten-check]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: 楽天に1回だけ聞いてみる
+        env:
+          RAKUTEN_APP_ID: ${{ secrets.RAKUTEN_APP_ID }}
+          RAKUTEN_ACCESS_KEY: ${{ secrets.RAKUTEN_ACCESS_KEY }}
+          RAKUTEN_AFFILIATE_ID: ${{ secrets.RAKUTEN_AFFILIATE_ID }}
+          RAKUTEN_REFERER: ${{ secrets.RAKUTEN_REFERER }}
+        run: |
+          set -o pipefail
+          node "scripts/楽天キーを試す.mjs" | tee -a "$GITHUB_STEP_SUMMARY"
