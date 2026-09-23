@@ -32,6 +32,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+import 宿
+
 JST = ZoneInfo("Asia/Tokyo")
 QUEUE_PATH = Path("posts/queue.jsonl")
 API_BASE = "https://api.anthropic.com/v1"
@@ -94,7 +96,7 @@ SLOTS = [
     (8, "福井の話題紹介", "F（紹介型）", "出勤前・始業前。今日これから動ける話題"),
     (10, "福井の話題紹介", "F（紹介型）", "通勤・通学時間に読まれる想定"),
     (12, "先の予定の紹介", "F（紹介型）", "昼休み。予定を立てはじめる時間。2週間以上先の催しを知らせる枠"),
-    (14, "福井の話題紹介", "F（紹介型）", "お昼過ぎに読まれる想定"),
+    (14, "宿の紹介（楽天トラベル・PR）", "F（紹介型）", "お昼過ぎ。福井に泊まる人へ、条件で宿を比べて見せる枠。毎日1本"),
     (15, "福井の話題紹介", "F（紹介型）", "休憩時間。新店・季節の話題など軽く読めるもの"),
     (17, "福井の話題紹介", "F（紹介型）", "仕事終わりに読まれる想定"),
     (19, "先の予定の紹介", "F（紹介型）", "夜のはじめ。2週間以上先の催しを知らせる枠"),
@@ -349,7 +351,7 @@ def describe_filled(filled: dict[int, dict]) -> str:
     return "\n".join(parts)
 
 
-def build_prompt(board: str, neta: str, articles: str, works: str, recent: str, target_date, needed, filled) -> str:
+def build_prompt(board: str, neta: str, articles: str, works: str, recent: str, target_date, needed, filled, hotel=None, hotel_hour=None) -> str:
     slot_lines = "\n".join(
         f"- {hour}:00 ｜ 深さ: {DEPTH.get(hour, 'B')} ｜ 柱: {pillar} ｜ 型: {form} ｜ ねらい: {aim}"
         for hour, pillar, form, aim in needed
@@ -650,6 +652,26 @@ def build_prompt(board: str, neta: str, articles: str, works: str, recent: str, 
         f"{hours} のぶんを、この順に @@@POST 〜 @@@END の組で並べてください。",
         f"HOUR には {hour_choices} のいずれかの数字だけを書きます。",
     ]
+    if hotel and hotel_hour is not None:
+        sections += [
+            f"## {hotel_hour}:00 の枠だけ、宿の紹介です（楽天トラベル・PR）",
+            "",
+            f"今日の切り口: {hotel['name']}",
+            f"材料（楽天トラベルに載っている内容）: {hotel['memo']}",
+            "",
+            "この枠の書き方には、守っていただく決まりがあります。",
+            "",
+            *宿の決まり(hotel),
+            "",
+        ]
+    if not hotel and hotel_hour is None:
+        sections += [
+            "## 今日は宿の紹介をしません",
+            "",
+            "紹介できる宿が用意されていません。**どの枠でも宿の紹介を書かないでください。**",
+            "宿の名前を出して良さを伝える書き方をしない。予約をすすめる書き方をしない。",
+            "",
+        ]
     return "\n".join(sections)
 
 
@@ -752,6 +774,77 @@ def source_urls(text: str, thread: list[str]) -> set[str]:
     return found
 
 
+
+# 宿の紹介枠（2026-09-23 代表指示）。楽天トラベルのアフィリエイト。
+# どの宿をどの切り口で出すかは scripts/宿.py が日付から決める。
+# 3アカウントとも同じリスト・同じ計算なので、同じ日には同じ内容になる。
+HOTEL_HOUR = 14
+
+# 【PR】の印。本文の先頭に無ければ止める（ステマ規制）。
+if "PR_MARKERS" not in dir():
+    PR_MARKERS = ("【PR】", "#PR", "＃PR", "[PR]")
+if "URL_IN_TEXT" not in dir():
+    URL_IN_TEXT = re.compile(r"https?://\S+")
+
+# 泊まっていない宿を「泊まった」と書かせない。
+# 楽天トラベルに載っている情報を読んで書くだけなので、体験として書くと嘘になる。
+STAYED_VOICE = re.compile(
+    r"泊まっ(た|て)|宿泊した|行ってき|訪れた|使ってみ|入ってみ|食べてき"
+)
+
+
+def 宿の決まり(選んだ: dict) -> list[str]:
+    """宿の枠で守ってもらう決まり。
+
+    2026-09-23 代表共有のnote記事（Threads×楽天アフィリ）より：
+      成果が出た型は「誰向け ＋ どんなお得 ＋ いま見る理由」。
+      本文にURLを入れると表示が落ちるので、リンクは連投（コメント欄）に置く。
+      長文と画像は要らない。短く、宛先をはっきりさせる。
+    """
+    return [
+        "1. **本文の冒頭を必ず「【PR】」で始める。** 末尾ではなく先頭です（ステマ規制）",
+        "2. **1行目で「誰に向けた話か」をはっきり書く。**",
+        "   例：「夜遅く福井に着く人へ」「子どもと福井に泊まる人へ」。",
+        "   全員に向けて書かないこと。宛先がはっきりしている投稿ほど読まれます",
+        "3. **2行目以降で、宿の名前とその事実を並べる。** 渡した材料の範囲だけ。",
+        "   書かれていないことを足さないこと",
+        "4. **URL は絶対に書かない。** リンクは連投（コメント欄）にこちらで付けます。",
+        "   「詳細はこちら」のような誘導文も本文に入れないこと",
+        "5. **泊まった体で書かない。** 「泊まった」「行ってきた」は書かないこと。",
+        "   楽天トラベルに載っている内容を読んで伝えるだけです",
+        "6. **「ない」と書かない。** 載っていないのは「設備が無い」ではなく",
+        "   「宿が登録していない」かもしれません。あるものだけを書く",
+        "7. 最後に「※楽天トラベルに載っている情報です」と1行入れる",
+        "8. **この枠に「出典元：」は書かない。** 出典はリンクそのものです。",
+        "   他の枠の「締めの問い」の決まりも、この枠には当てはめないでください",
+        "",
+        "本文は【PR】を含めて日本語 80〜140 字。短いほうが読まれます。",
+        "連投（リンク）はこちらで付けるので、thread は空のままにしてください。",
+    ]
+
+
+リンクの長さ = len
+リンクの上限 = 480  # Threads は 500 字
+
+
+def 宿のリンク(選んだ: dict) -> list[str]:
+    """宿のリンクを、連投1本にまとめられるだけまとめる。
+
+    本文にURLを入れると表示が落ちるので、リンクは連投（コメント欄）に置く。
+    連投は少ないほうが読まれるので、入るだけ1本にまとめる。
+    """
+    かたまり, いま = [], ""
+    for 行 in 選んだ.get("links") or []:
+        つぎ = (いま + "\n\n" + 行) if いま else 行
+        if いま and リンクの長さ(つぎ) > リンクの上限:
+            かたまり.append(いま)
+            いま = 行
+        else:
+            いま = つぎ
+    if いま:
+        かたまり.append(いま)
+    return かたまり
+
 def new_id(hour: int, existing: set[str]) -> str:
     stamp = datetime.now(JST).strftime("%Y%m%d")
     while True:
@@ -810,6 +903,26 @@ def main() -> None:
     articles = fetch_urala_articles()
     works = fetch_urala_design_works()
 
+    # 宿の紹介枠（2026-09-23 代表指示）。毎日 1 本、HOTEL_HOUR の枠だけ。
+    # どの宿をどの切り口で出すかは scripts/宿.py が日付から決める。
+    # 3アカウントとも同じリスト・同じ計算なので、同じ日には同じ内容になる。
+    宿たち = 宿.読む()
+    hotel = None
+    if 宿たち and any(hour == HOTEL_HOUR for hour, *_ in needed):
+        選んだ宿 = 宿.今日の切り口(target_date, 宿たち)
+        if 選んだ宿:
+            hotel = 宿.投稿用にする(選んだ宿)
+            print(
+                f"宿の枠: {HOTEL_HOUR}:00 ｜ {hotel['name']}"
+                f"（{len(選んだ宿['宿'])} 軒／リスト {len(宿たち)} 軒）"
+            )
+        else:
+            print("::warning::今日は 2 軒そろう切り口がありません。宿の紹介はしません。")
+    elif 宿たち:
+        print(f"宿の枠: {HOTEL_HOUR}:00 はすでに埋まっているため、今回は紹介しません。")
+    else:
+        print("::warning::宿のリストが空です。宿の紹介はしません。")
+
     model = pick_model(api_key)
     prompt = build_prompt(board, neta, articles, works, recent_texts(entries), target_date, needed, filled)
     posts = generate(api_key, model, prompt, [hour for hour, *_ in needed])
@@ -838,6 +951,34 @@ def main() -> None:
         for part in [text, *thread]:
             if len(part) > 500:
                 fail(f"{hour}:00 に 500 字を超える要素があります（{len(part)} 字）。")
+        if not hotel and hour == HOTEL_HOUR and text.startswith(PR_MARKERS):
+            # 宿の枠が立っていないのに PR 投稿が作られた。
+            # リンクが付かないので成果にならず、表示だけが残る。
+            fail(
+                f"{hour}:00 が【PR】で始まっていますが、今日は紹介できる宿がありません"
+                f"（先頭 30 字: {text[:30]!r}）。"
+            )
+
+        if hotel and hour == HOTEL_HOUR:
+            # 本文に URL が紛れ込んでいたら止める。
+            # 本文にリンクを入れると表示が落ちるので、リンクは連投に置く方針。
+            if URL_IN_TEXT.search(text):
+                fail(f"{hour}:00 の本文に URL が入っています。この枠では本文にリンクを書きません。")
+            if not text.startswith(PR_MARKERS):
+                fail(
+                    f"{hour}:00 の本文が【PR】で始まっていません（先頭 20 字: {text[:20]!r}）。"
+                    "ステマ規制のため、冒頭の表記は必須です。"
+                )
+            泊 = STAYED_VOICE.search(text)
+            if 泊:
+                fail(
+                    f"{hour}:00 の本文に「{泊.group(0)}」が入っています。"
+                    "この宿には泊まっていません。楽天トラベルに載っている情報を"
+                    "伝えるだけの書き方にしてください。"
+                )
+            # リンクは宿のリストに書かれた文字列をそのまま使う。AI を通さない。
+            thread = 宿のリンク(hotel)
+
         # 同じ催しを 1 日に 2 本出していないかを、ここで機械的に確かめる。
         # 指示だけだと読み飛ばされる（9/24 ぶんで 3 組の重複が通った）。
         重なり = source_urls(text, thread) & set(出典の枠)
