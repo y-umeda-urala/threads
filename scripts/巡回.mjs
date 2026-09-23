@@ -241,6 +241,7 @@ async function ネタ帳を読む(先, 捨てる語 = []) {
     ? Date.now() - 先['何日前まで'] * 24 * 60 * 60 * 1000
     : null;
 
+  const 見出しの形 = 先['見出しの形'] ? new RegExp(先['見出しの形']) : null;
   const items = [];
   let 捨てた = 0;
   // 「### YYYY-MM-DD」ごとに、本文の行と <details> の出典URLを順番で対応させる
@@ -262,6 +263,7 @@ async function ネタ帳を読む(先, 捨てる語 = []) {
       const タイトル = 行[i];
       const url = 出典[i] ?? '';
       if (!タイトル || !url) continue; // 出典が対応しないものは使わない
+      if (見出しの形 && !見出しの形.test(タイトル)) continue; // こちらに関係ない話題を落とす
       if (捨てるか(タイトル, 捨てる語)) {
         捨てた += 1;
         continue;
