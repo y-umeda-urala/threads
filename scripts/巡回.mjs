@@ -24,7 +24,8 @@ export async function 巡回(巡回先) {
     ...(巡回先.RSS ?? []).map((s) => RSSを読む(s, 境目, 上限, 捨てる語)),
     ...(巡回先.HTML ?? []).map((s) =>
       s['拾い方'] === 'リスト' ? リストを読む(s, 捨てる語) : HTMLを読む(s, 捨てる語)
-    )
+    ),
+    ...(巡回先['よそのネタ帳'] ?? []).map((s) => ネタ帳を読む(s, 捨てる語))
   ];
   const 結果 = await Promise.all(仕事);
 
@@ -222,6 +223,60 @@ async function リストを読む(先, 捨てる語 = []) {
   // 日付が揃わない一覧では、並べ替えずにページの順（新しい順）をそのまま使う
   if (先['日付が必要'] === true) items.sort((a, b) => (b.日付 || '').localeCompare(a.日付 || ''));
   return { 名前: 先.名前, items: items.slice(0, 先['最大件数'] ?? 20), 捨てた };
+}
+
+/**
+ * もう一方のアカウントのネタ帳を読む。
+ * 片方だけが拾った出来事（RENEW・さばえまつりなど）を取りこぼさないため。
+ * 事実と出典URLだけを borrow する。選ぶ基準と書き方は、こちらのまま。
+ */
+async function ネタ帳を読む(先, 捨てる語 = []) {
+  let md;
+  try {
+    md = await 取る(先.url);
+  } catch (e) {
+    return { 名前: 先.名前, items: [], error: String(e.message ?? e).slice(0, 160) };
+  }
+  const 境目 = 先['何日前まで']
+    ? Date.now() - 先['何日前まで'] * 24 * 60 * 60 * 1000
+    : null;
+
+  const items = [];
+  let 捨てた = 0;
+  // 「### YYYY-MM-DD」ごとに、本文の行と <details> の出典URLを順番で対応させる
+  const 節 = md.split(/\n(?=###\s)/);
+  for (const 塊 of 節) {
+    const 日 = 塊.match(/^###\s*(\d{4})-(\d{2})-(\d{2})/);
+    if (!日) continue;
+    const 日付 = `${日[1]}-${日[2]}-${日[3]}`;
+    if (境目 && new Date(`${日付}T00:00:00+09:00`).getTime() < 境目) continue;
+
+    const 分かれ目 = 塊.indexOf('<details');
+    const 本文側 = 分かれ目 === -1 ? 塊 : 塊.slice(0, 分かれ目);
+    const 出典側 = 分かれ目 === -1 ? '' : 塊.slice(分かれ目);
+
+    const 行 = [...本文側.matchAll(/^[-*・]\s+(.+)$/gm)].map((m) => m[1].trim());
+    const 出典 = [...出典側.matchAll(/^[-*・]\s+(https?:\/\/\S+)/gm)].map((m) => m[1].trim());
+
+    for (let i = 0; i < 行.length; i += 1) {
+      const タイトル = 行[i];
+      const url = 出典[i] ?? '';
+      if (!タイトル || !url) continue; // 出典が対応しないものは使わない
+      if (捨てるか(タイトル, 捨てる語)) {
+        捨てた += 1;
+        continue;
+      }
+      items.push({
+        名前: 先.名前,
+        区分: 'よそのネタ帳',
+        タイトル: タイトル.slice(0, 160),
+        url,
+        日付
+      });
+    }
+  }
+  items.sort((a, b) => (b.日付 || '').localeCompare(a.日付 || ''));
+  return { 名前: 先.名前, items: items.slice(0, 先['最大件数'] ?? 15), 捨てた };
 }
 
 // ------------------------------------------------------------------ 小物
