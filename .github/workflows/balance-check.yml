@@ -3,12 +3,24 @@ name: 残高チェック
 # Anthropic の API がいま呼べるかを、いちばん小さいリクエストで確かめる。
 # 残高が切れると 生成・収集・レビュー が全部止まり、キューが空のまま翌日になる。
 # 20:00 の生成より前に気づけるよう、毎日 19:30 JST に回す。
+#
+# 結果は state/balance.json に書いてコミットする（2026-09-23 追加）。
+# Cowork の定時タスクは Mac も GitHub API も使えないことがあるため、
+# raw.githubusercontent.com から読めるファイルに落としておく。
 on:
   repository_dispatch:
     types: [balance-check]
   schedule:
     - cron: "30 10 * * *"   # 19:30 JST
   workflow_dispatch:
+
+permissions:
+  contents: write
+
+# ほかのワークフローと同じファイルを触るので、重ねて走らせない
+concurrency:
+  group: balance-check
+  cancel-in-progress: false
 
 jobs:
   check:
@@ -18,8 +30,38 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
+
       - name: API が呼べるか確かめる
+        id: check
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           ACCOUNT_LABEL: ${{ github.repository }}
         run: node scripts/balance-check.mjs
+
+      # 呼べなかったときこそ記録が要る。前のステップが落ちても必ず走らせる。
+      - name: 結果をコミットする
+        if: always()
+        run: |
+          set -euo pipefail
+          TARGET="state/balance.json"
+          if [ ! -f "${TARGET}" ]; then
+            echo "${TARGET} が無いので、コミットはしません。"
+            exit 0
+          fi
+          if git diff --quiet -- "${TARGET}"; then
+            echo "${TARGET} に変更なし。コミットはしません。"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "${TARGET}"
+          git commit -m "chore(balance): $(TZ=Asia/Tokyo date '+%F %H:%M') の残高チェック結果"
+          for attempt in 1 2 3 4; do
+            if git pull --rebase origin "${GITHUB_REF_NAME}" && git push; then
+              exit 0
+            fi
+            wait=$((2 ** attempt))
+            echo "push に失敗。${wait} 秒待って再試行します。"
+            sleep "${wait}"
+          done
+          exit 1
