@@ -32,6 +32,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+import お得日
 import 宿
 
 JST = ZoneInfo("Asia/Tokyo")
@@ -653,9 +654,29 @@ def build_prompt(board: str, neta: str, articles: str, works: str, recent: str, 
         f"HOUR には {hour_choices} のいずれかの数字だけを書きます。",
     ]
     if hotel and hotel_hour is not None:
+        # 5と0のつく日は、楽天トラベルのクーポンが出る（エントリー不要）。
+        # 宿にはふだん「期限」が作れないが、この日だけは作れる。
+        旅の得 = お得日.旅(target_date)
         sections += [
             f"## {hotel_hour}:00 の枠だけ、宿の紹介です（楽天トラベル・PR）",
             "",
+            *(
+                [
+                    f"### 今日は楽天トラベルの「{旅の得['名']}」です",
+                    f"{旅の得['何が']}。{旅の得['条件']}",
+                    "",
+                    "**この日だけは、本文に「今日はクーポンが出ている日」だと必ず書いてください。**",
+                    "代表共有のnote記事で成果が出た型は「誰向け ＋ どんなお得 ＋ 期限」。",
+                    "宿にはふだん期限が作れませんが、今日は期限があります。",
+                    "",
+                    "- **割引率の数字は書かない。** 楽天のキャンペーンは予告なく変わります",
+                    "- 「今日中にクーポンを取れる」ことは書いてよい",
+                    "- 楽天トラベルのこの日はエントリーが要りません。要ると書かないこと",
+                    "",
+                ]
+                if 旅の得
+                else []
+            ),
             f"今日の切り口: {hotel['name']}",
             f"材料（楽天トラベルに載っている内容）: {hotel['memo']}",
             "",
