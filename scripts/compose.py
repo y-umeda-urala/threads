@@ -352,7 +352,7 @@ def describe_filled(filled: dict[int, dict]) -> str:
     return "\n".join(parts)
 
 
-def build_prompt(board: str, neta: str, articles: str, works: str, recent: str, target_date, needed, filled, hotel=None, hotel_hour=None) -> str:
+def build_prompt(board: str, neta: str, articles: str, works: str, recent: str, target_date, needed, filled, hotel=None, hotel_hour=None, mugi=None) -> str:
     slot_lines = "\n".join(
         f"- {hour}:00 ｜ 深さ: {DEPTH.get(hour, 'B')} ｜ 柱: {pillar} ｜ 型: {form} ｜ ねらい: {aim}"
         for hour, pillar, form, aim in needed
@@ -653,6 +653,21 @@ def build_prompt(board: str, neta: str, articles: str, works: str, recent: str, 
         f"{hours} のぶんを、この順に @@@POST 〜 @@@END の組で並べてください。",
         f"HOUR には {hour_choices} のいずれかの数字だけを書きます。",
     ]
+    if mugi and hotel_hour is not None:
+        sections += [
+            f"## {hotel_hour}:00 の枠は、クーポンのお知らせです（楽天トラベル・PR）",
+            "",
+            f"今日は楽天トラベルの「{mugi['お得日']['名']}」。{mugi['お得日']['何が']}。",
+            f"{mugi['お得日']['条件']}",
+            *([f"うたい文句: {mugi['うたい文句']}"] if mugi["うたい文句"] else []),
+            "",
+            "**この枠は、宿を並べません。クーポンの話だけを短く書きます。**",
+            "代表共有のnote記事で、2日で66,102円になった型です。",
+            "型は「誰向け ＋ どんなお得 ＋ 期限」。",
+            "",
+            *むぎの決まり(mugi),
+            "",
+        ]
     if hotel and hotel_hour is not None:
         # 5と0のつく日は、楽天トラベルのクーポンが出る（エントリー不要）。
         旅の得 = お得日.旅(target_date)
@@ -804,6 +819,70 @@ if "URL_IN_TEXT" not in dir():
 STAYED_VOICE = re.compile(
     r"泊まっ(た|て)|宿泊した|行ってき|訪れた|使ってみ|入ってみ|食べてき"
 )
+
+
+# 宿の枠の2つの型（2026-09-24 代表判断）。どちらが稼ぐかを数字で比べる。
+#
+#   むぎ型 … クーポン1本だけ。40〜90字。代表共有のnote記事で
+#             2日66,102円になった型（誰向け ＋ どんなお得 ＋ 期限）。
+#   9選型 … 宿を7軒並べて、返信に1軒ずつリンク。到達は取れている型
+#            （代表が見つけた投稿は表示1.5万・いいね570）。
+#
+# 5と0のつく日は むぎ型、それ以外は 9選型 にする。
+# むぎ型の力は「期限」にあり、期限が作れるのはクーポンが出る日だけのため。
+# 成果は楽天アフィリエイトのレポートで分かれて見える
+# （むぎ型＝クーポンのリンク、9選型＝宿のリンク）。
+
+
+def 宿の型(対象日) -> str:
+    """その日の宿の枠をどちらの型で書くか。"""
+    return "むぎ" if お得日.旅(対象日) else "9選"
+
+
+def むぎの決まり(材料: dict) -> list[str]:
+    """むぎ型で守ってもらう決まり。"""
+    数 = 材料.get("うたい文句") or ""
+    return [
+        "1. **本文の冒頭を必ず「【PR】」で始める。** 末尾ではなく先頭です（ステマ規制）",
+        "2. **1行目で「誰に向けた話か」をはっきり書く。**",
+        "   例：「週末に福井へ泊まる人へ」「連休に子どもと出かける人へ」。",
+        "   全員に向けて書かないこと。宛先がはっきりしている投稿ほど読まれます",
+        "3. **どんなお得かを一言で。**",
+        (f"   書いてよい数字は「{数}」だけです。これ以外の数字を作らないこと"
+         if 数 else "   数字は書かないでください。渡していません"),
+        f"4. **いつまでかを書く（{材料.get('期限') or 'この日から48時間'}）。**",
+        "   いま見る理由になります。ここが無いと後回しにされます",
+        "5. **エントリーは要らないと書いてよい。** ただし",
+        "   「クーポンは自分で取りに行く必要がある」ことも書いてください",
+        "6. **宿の名前を出さない。** この枠はクーポンの話だけです",
+        "7. **URL は絶対に書かない。** リンクは返信（コメント欄）にこちらで付けます",
+        "8. 「泊まった」「行ってきた」と書かない",
+        "",
+        "**本文は【PR】を含めて日本語 40〜90 字。短いほど読まれます。**",
+        "note記事で20.2万表示・66,102円になった投稿は37字でした。長く書かないこと。",
+        "thread は空のままにしてください。返信はこちらで付けます。",
+    ]
+
+
+def むぎの返信(材料: dict) -> list[str]:
+    """むぎ型の返信。クーポンのリンク1本だけ。"""
+    行 = ["PR", "楽天トラベルのクーポンはこちらです", ""]
+    for c in 材料["クーポン"][:2]:
+        行.append(f"{c['名']}\n{c['url']}")
+        行.append("")
+    return ["\n".join(行).strip()]
+
+
+def むぎの数字(text: str, 材料: dict) -> str | None:
+    """本文にある数字のうち、渡したうたい文句に無いものを返す。"""
+    許す = str(材料.get("うたい文句") or "") + str(材料.get("期限") or "")
+    許す = 許す.replace("％", "%").replace(" ", "")
+    for m in re.finditer(r"\d+(?:\.\d+)?\s*(?:割|%|％|倍|円|時間|日|泊)", text):
+        語 = m.group(0).replace("％", "%").replace(" ", "")
+        if 語 in 許す:
+            continue
+        return m.group(0)
+    return None
 
 
 def 宿の決まり(選んだ: dict) -> list[str]:
@@ -1008,6 +1087,24 @@ def main() -> None:
     else:
         print("::warning::宿のリストが空です。宿の紹介はしません。")
 
+    # むぎ型（クーポン1本だけの短文）。5と0のつく日に出す。
+    mugi = None
+    if hotel and 宿の型(target_date) == "むぎ":
+        旅の得 = お得日.旅(target_date)
+        使える = [c for c in 宿.クーポンを読む()
+                  if str(c.get("いつ", "いつでも")) != "5と0のつく日" or 旅の得]
+        if 使える:
+            mugi = {
+                "お得日": 旅の得,
+                "クーポン": 使える,
+                "うたい文句": next((c.get("うたい文句") for c in 使える if c.get("うたい文句")), ""),
+                "期限": next((c.get("期限") for c in 使える if c.get("期限")), None),
+            }
+            hotel = None   # この日は宿の一覧を出さない
+            print(f"  → 今日は5と0のつく日なので、むぎ型（クーポン {len(使える)} 本）に差し替えます")
+        else:
+            print("::warning::5と0のつく日ですが、使えるクーポンがありません。9選型で出します。")
+
     model = pick_model(api_key)
     prompt = build_prompt(board, neta, articles, works, recent_texts(entries), target_date, needed, filled)
     posts = generate(api_key, model, prompt, [hour for hour, *_ in needed])
@@ -1036,7 +1133,29 @@ def main() -> None:
         for part in [text, *thread]:
             if len(part) > 500:
                 fail(f"{hour}:00 に 500 字を超える要素があります（{len(part)} 字）。")
-        if not hotel and hour == HOTEL_HOUR and text.startswith(PR_MARKERS):
+        if mugi and hour == HOTEL_HOUR:
+            if URL_IN_TEXT.search(text):
+                fail(f"{hour}:00 の本文に URL が入っています。この枠では本文にリンクを書きません。")
+            if not text.startswith(PR_MARKERS):
+                fail(
+                    f"{hour}:00 の本文が【PR】で始まっていません（先頭 20 字: {text[:20]!r}）。"
+                    "ステマ規制のため、冒頭の表記は必須です。"
+                )
+            if len(text) > 120:
+                fail(f"{hour}:00 の本文が長すぎます（{len(text)} 字）。この枠は 40〜90 字です。")
+            泊 = STAYED_VOICE.search(text)
+            if 泊:
+                fail(f"{hour}:00 の本文に「{泊.group(0)}」が入っています。泊まった体で書かないこと。")
+            数 = むぎの数字(text, mugi)
+            if 数:
+                fail(
+                    f"{hour}:00 の本文に「{数}」が入っています。"
+                    "楽天のキャンペーンは予告なく変わるので、渡した数字以外は書きません。"
+                    "（neta/宿_クーポン.jsonl の「うたい文句」に書いた数字だけ使えます）"
+                )
+            thread = むぎの返信(mugi)
+
+        if not hotel and not mugi and hour == HOTEL_HOUR and text.startswith(PR_MARKERS):
             # 宿の枠が立っていないのに PR 投稿が作られた。
             # リンクが付かないので成果にならず、表示だけが残る。
             fail(
