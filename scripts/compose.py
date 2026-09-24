@@ -1043,6 +1043,19 @@ def 宿のリンク(選んだ: dict) -> list[str]:
         かたまり.append(いま)
     return かたまり
 
+
+class 枠を落とす(Exception):
+    """この枠だけ作らない。他の枠は残す。
+
+    2026-09-24 と 25 に、1本の見張り違反で fail() が走り、その日の10本が
+    まるごと作られなかった。1本の取りこぼしと、1日の全滅は釣り合わない。
+    """
+
+
+def 落とす(わけ: str):
+    raise 枠を落とす(わけ)
+
+
 def new_id(hour: int, existing: set[str]) -> str:
     stamp = datetime.now(JST).strftime("%Y%m%d")
     while True:
@@ -1160,105 +1173,109 @@ def main() -> None:
             出典の枠[u] = h
 
     for hour, *_ in needed:
-        post = by_hour.get(hour)
-        if not post:
-            # 3回聞いても返らなかった枠。ここで止めると他の枠まで捨てることになる
-            print(f"::warning::{hour}:00 は作れませんでした。この枠は空のままにします。")
+        try:
+            post = by_hour.get(hour)
+            if not post:
+                # 3回聞いても返らなかった枠。ここで止めると他の枠まで捨てることになる
+                print(f"::warning::{hour}:00 は作れませんでした。この枠は空のままにします。")
+                continue
+            text = (post.get("text") or "").strip()
+            if not text:
+                落とす(f"{hour}:00 の本文が空です。")
+            thread = [t.strip() for t in (post.get("thread") or []) if t and t.strip()]
+            for part in [text, *thread]:
+                if len(part) > 500:
+                    落とす(f"{hour}:00 に 500 字を超える要素があります（{len(part)} 字）。")
+            if mugi and hour == HOTEL_HOUR:
+                if URL_IN_TEXT.search(text):
+                    落とす(f"{hour}:00 の本文に URL が入っています。この枠では本文にリンクを書きません。")
+                if not text.startswith(PR_MARKERS):
+                    落とす(
+                        f"{hour}:00 の本文が【PR】で始まっていません（先頭 20 字: {text[:20]!r}）。"
+                        "ステマ規制のため、冒頭の表記は必須です。"
+                    )
+                if len(text) > 120:
+                    落とす(f"{hour}:00 の本文が長すぎます（{len(text)} 字）。この枠は 40〜90 字です。")
+                泊 = STAYED_VOICE.search(text)
+                if 泊:
+                    落とす(f"{hour}:00 の本文に「{泊.group(0)}」が入っています。泊まった体で書かないこと。")
+                数 = むぎの数字(text, mugi)
+                if 数:
+                    落とす(
+                        f"{hour}:00 の本文に「{数}」が入っています。"
+                        "楽天のキャンペーンは予告なく変わるので、渡した数字以外は書きません。"
+                        "（neta/宿_クーポン.jsonl の「うたい文句」に書いた数字だけ使えます）"
+                    )
+                thread = むぎの返信(mugi)
+
+            if not hotel and not mugi and hour == HOTEL_HOUR and text.startswith(PR_MARKERS):
+                # 宿の枠が立っていないのに PR 投稿が作られた。
+                # リンクが付かないので成果にならず、表示だけが残る。
+                落とす(
+                    f"{hour}:00 が【PR】で始まっていますが、今日は紹介できる宿がありません"
+                    f"（先頭 30 字: {text[:30]!r}）。"
+                )
+
+            if hotel and hour == HOTEL_HOUR:
+                # AI に書かせるのは見出し1行だけ。宿の一覧・リンクはこちらで組み立てる。
+                見出し = text.splitlines()[0].strip() if text else ""
+                if not 見出し:
+                    落とす(f"{hour}:00 の見出しが空です。")
+                if URL_IN_TEXT.search(見出し):
+                    落とす(f"{hour}:00 の見出しに URL が入っています。")
+                if 見出し.startswith(PR_MARKERS):
+                    落とす(
+                        f"{hour}:00 の見出しが【PR】で始まっています。"
+                        "1本目にはリンクを入れないので、PR は返信の先頭に付けます。"
+                    )
+                if "福井" not in 見出し:
+                    落とす(f"{hour}:00 の見出しに「福井」が入っていません（{見出し!r}）。")
+                if len(見出し) > 34:
+                    落とす(f"{hour}:00 の見出しが長すぎます（{len(見出し)} 字）: {見出し!r}")
+                泊 = STAYED_VOICE.search(見出し)
+                if 泊:
+                    落とす(
+                        f"{hour}:00 の見出しに「{泊.group(0)}」が入っています。"
+                        "この宿には泊まっていません。"
+                    )
+                text = 宿の本文(hotel["raw"], 見出し)
+                thread = 宿の返信(hotel["raw"], target_date)
+
+            # 同じ催しを 1 日に 2 本出していないかを、ここで機械的に確かめる。
+            # 指示だけだと読み飛ばされる（9/24 ぶんで 3 組の重複が通った）。
+            重なり = source_urls(text, thread) & set(出典の枠)
+            if 重なり:
+                # 重なった枠だけを落とす。ここで fail すると、その日の10本が
+                # まるごと捨てられる（2026-09-24 に実際に起きて、9/25 が空になった）。
+                # 1本の取りこぼしと、1日の全滅は釣り合わない。
+                どこ = "、".join(f"{h}:00" for h in sorted(出典の枠[u] for u in 重なり))
+                print(
+                    f"::warning::{hour}:00 は {どこ} と同じ出来事なので入れません"
+                    f"（出典 {sorted(重なり)[0]}）。この枠は空のままにします。"
+                )
+                continue
+            for u in source_urls(text, thread):
+                出典の枠[u] = hour
+
+            item = {
+                "id": new_id(hour, existing_ids),
+                "text": text,
+                "scheduled_at": f"{target_date.isoformat()}T{hour:02d}:00:00+09:00",
+            }
+            existing_ids.add(item["id"])
+            if thread:
+                item["thread"] = thread
+            if post.get("note"):
+                item["note"] = str(post["note"])[:120]
+            new_lines.append(json.dumps(item, ensure_ascii=False))
+            print(f"\n=== {hour}:00 ({len(text)} 字) ===\n{text}")
+            for index, part in enumerate(thread, start=2):
+                print(f"--- 連投 {index} ({len(part)} 字) ---\n{part}")
+            if post.get("note"):
+                print(f"[メモ] {post['note']}")
+        except 枠を落とす as わけ:
+            print(f"::warning::{hour}:00 は作れませんでした（{わけ}）。この枠は空のままにします。")
             continue
-        text = (post.get("text") or "").strip()
-        if not text:
-            fail(f"{hour}:00 の本文が空です。")
-        thread = [t.strip() for t in (post.get("thread") or []) if t and t.strip()]
-        for part in [text, *thread]:
-            if len(part) > 500:
-                fail(f"{hour}:00 に 500 字を超える要素があります（{len(part)} 字）。")
-        if mugi and hour == HOTEL_HOUR:
-            if URL_IN_TEXT.search(text):
-                fail(f"{hour}:00 の本文に URL が入っています。この枠では本文にリンクを書きません。")
-            if not text.startswith(PR_MARKERS):
-                fail(
-                    f"{hour}:00 の本文が【PR】で始まっていません（先頭 20 字: {text[:20]!r}）。"
-                    "ステマ規制のため、冒頭の表記は必須です。"
-                )
-            if len(text) > 120:
-                fail(f"{hour}:00 の本文が長すぎます（{len(text)} 字）。この枠は 40〜90 字です。")
-            泊 = STAYED_VOICE.search(text)
-            if 泊:
-                fail(f"{hour}:00 の本文に「{泊.group(0)}」が入っています。泊まった体で書かないこと。")
-            数 = むぎの数字(text, mugi)
-            if 数:
-                fail(
-                    f"{hour}:00 の本文に「{数}」が入っています。"
-                    "楽天のキャンペーンは予告なく変わるので、渡した数字以外は書きません。"
-                    "（neta/宿_クーポン.jsonl の「うたい文句」に書いた数字だけ使えます）"
-                )
-            thread = むぎの返信(mugi)
-
-        if not hotel and not mugi and hour == HOTEL_HOUR and text.startswith(PR_MARKERS):
-            # 宿の枠が立っていないのに PR 投稿が作られた。
-            # リンクが付かないので成果にならず、表示だけが残る。
-            fail(
-                f"{hour}:00 が【PR】で始まっていますが、今日は紹介できる宿がありません"
-                f"（先頭 30 字: {text[:30]!r}）。"
-            )
-
-        if hotel and hour == HOTEL_HOUR:
-            # AI に書かせるのは見出し1行だけ。宿の一覧・リンクはこちらで組み立てる。
-            見出し = text.splitlines()[0].strip() if text else ""
-            if not 見出し:
-                fail(f"{hour}:00 の見出しが空です。")
-            if URL_IN_TEXT.search(見出し):
-                fail(f"{hour}:00 の見出しに URL が入っています。")
-            if 見出し.startswith(PR_MARKERS):
-                fail(
-                    f"{hour}:00 の見出しが【PR】で始まっています。"
-                    "1本目にはリンクを入れないので、PR は返信の先頭に付けます。"
-                )
-            if "福井" not in 見出し:
-                fail(f"{hour}:00 の見出しに「福井」が入っていません（{見出し!r}）。")
-            if len(見出し) > 34:
-                fail(f"{hour}:00 の見出しが長すぎます（{len(見出し)} 字）: {見出し!r}")
-            泊 = STAYED_VOICE.search(見出し)
-            if 泊:
-                fail(
-                    f"{hour}:00 の見出しに「{泊.group(0)}」が入っています。"
-                    "この宿には泊まっていません。"
-                )
-            text = 宿の本文(hotel["raw"], 見出し)
-            thread = 宿の返信(hotel["raw"], target_date)
-
-        # 同じ催しを 1 日に 2 本出していないかを、ここで機械的に確かめる。
-        # 指示だけだと読み飛ばされる（9/24 ぶんで 3 組の重複が通った）。
-        重なり = source_urls(text, thread) & set(出典の枠)
-        if 重なり:
-            # 重なった枠だけを落とす。ここで fail すると、その日の10本が
-            # まるごと捨てられる（2026-09-24 に実際に起きて、9/25 が空になった）。
-            # 1本の取りこぼしと、1日の全滅は釣り合わない。
-            どこ = "、".join(f"{h}:00" for h in sorted(出典の枠[u] for u in 重なり))
-            print(
-                f"::warning::{hour}:00 は {どこ} と同じ出来事なので入れません"
-                f"（出典 {sorted(重なり)[0]}）。この枠は空のままにします。"
-            )
-            continue
-        for u in source_urls(text, thread):
-            出典の枠[u] = hour
-
-        item = {
-            "id": new_id(hour, existing_ids),
-            "text": text,
-            "scheduled_at": f"{target_date.isoformat()}T{hour:02d}:00:00+09:00",
-        }
-        existing_ids.add(item["id"])
-        if thread:
-            item["thread"] = thread
-        if post.get("note"):
-            item["note"] = str(post["note"])[:120]
-        new_lines.append(json.dumps(item, ensure_ascii=False))
-        print(f"\n=== {hour}:00 ({len(text)} 字) ===\n{text}")
-        for index, part in enumerate(thread, start=2):
-            print(f"--- 連投 {index} ({len(part)} 字) ---\n{part}")
-        if post.get("note"):
-            print(f"[メモ] {post['note']}")
 
     if dry_run:
         print("\nDRY_RUN のため、キューには書き込みません。")
