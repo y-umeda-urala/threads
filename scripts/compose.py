@@ -353,10 +353,16 @@ def describe_filled(filled: dict[int, dict]) -> str:
 
 
 def build_prompt(board: str, neta: str, articles: str, works: str, recent: str, target_date, needed, filled, hotel=None, hotel_hour=None, mugi=None) -> str:
-    slot_lines = "\n".join(
-        f"- {hour}:00 ｜ 深さ: {DEPTH.get(hour, 'B')} ｜ 柱: {pillar} ｜ 型: {form} ｜ ねらい: {aim}"
-        for hour, pillar, form, aim in needed
-    )
+    def _枠の行(hour, pillar, form, aim):
+        行 = f"- {hour}:00 ｜ 深さ: {DEPTH.get(hour, 'B')} ｜ 柱: {pillar} ｜ 型: {form} ｜ ねらい: {aim}"
+        # PR の枠は、9枠ぶんの指示に埋もれて読み飛ばされることがある。
+        # 枠の一覧そのものに印を出して、見落としを防ぐ（2026-09-25）。
+        if hotel_hour is not None and hour == hotel_hour:
+            行 += ("\n  ★★ この枠は下の「PR」の節の指示だけに従ってください。"
+                   "**本文を必ず【PR】で始めること。** 上の柱・型の指示は当てはめません ★★")
+        return 行
+
+    slot_lines = "\n".join(_枠の行(*x) for x in needed)
     weekday = "月火水木金土日"[target_date.weekday()]
     hours = "、".join(f"{hour}:00" for hour, *_ in needed)
     hour_choices = "／".join(str(hour) for hour, *_ in SLOTS)
