@@ -1175,7 +1175,12 @@ def main() -> None:
             print("::warning::5と0のつく日ですが、使えるクーポンがありません。9選型で出します。")
 
     model = pick_model(api_key)
-    prompt = build_prompt(board, neta, articles, works, recent_texts(entries), target_date, needed, filled)
+    prompt = build_prompt(
+        board, neta, articles, works, recent_texts(entries), target_date, needed, filled,
+        hotel=hotel,
+        hotel_hour=HOTEL_HOUR if (hotel or mugi) else None,
+        mugi=mugi,
+    )
     posts = generate(api_key, model, prompt, [hour for hour, *_ in needed])
 
     by_hour = {int(p["hour"]): p for p in posts}
