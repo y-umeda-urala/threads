@@ -239,9 +239,13 @@ const 本文 = await claudeに聞く(指示);
 const 取れた = JSONを取り出す(本文);
 
 if (!取れた || !Array.isArray(取れた.items)) {
-  console.error('JSON を取り出せませんでした。返ってきた本文の先頭を出します:');
-  console.error(本文.slice(0, 1500));
-  process.exit(1);
+  // 本文が空・JSONなし ＝ 今日は拾えなかった扱い。失敗（赤）にはせず、警告（黄）で止める。
+  // 翌日の schedule / cron で普通に再挑戦する。本当の失敗（API の 4xx/5xx）は上の throw で赤になる。
+  console.log('::warning::JSON を取り出せませんでした（本文が空か、形式が違う）。今日は0件扱いにします');
+  console.log('返ってきた本文の先頭:');
+  console.log(本文.slice(0, 1500) || '（空）');
+  出力('added', '0');
+  process.exit(0);
 }
 
 // ==================================================================
@@ -331,39 +335,51 @@ if (書かない) {
 // ==================================================================
 
 async function claudeに聞く(prompt) {
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'x-api-key': APIキー,
-      'anthropic-version': '2023-06-01'
-    },
-    body: JSON.stringify({
-      model: 設定.モデル ?? 'claude-sonnet-5',
-      max_tokens: 4000,
-      tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 設定.検索回数 ?? 8 }],
-      messages: [{ role: 'user', content: prompt }]
-    })
-  });
+  // web_search（サーバー側ツール）は途中で stop_reason: "pause_turn" を返して
+  // 「続きを頼む」ことがある。その場合は返ってきた content をそのまま assistant として
+  // 積み、同じ会話を送り直す（最大3回）。これをしないと本文が空のまま返ってくる。
+  const messages = [{ role: 'user', content: prompt }];
+  let data = null;
+  let 検索した = 0, 入力 = 0, 出力t = 0;
+  for (let 回 = 0; 回 < 4; 回++) {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-api-key': APIキー,
+        'anthropic-version': '2023-06-01'
+      },
+      body: JSON.stringify({
+        model: 設定.モデル ?? 'claude-sonnet-5',
+        max_tokens: 8000,
+        tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 設定.検索回数 ?? 8 }],
+        messages
+      })
+    });
 
-  if (!res.ok) {
-    throw new Error(`Anthropic API が ${res.status} を返しました: ${(await res.text()).slice(0, 500)}`);
+    if (!res.ok) {
+      throw new Error(`Anthropic API が ${res.status} を返しました: ${(await res.text()).slice(0, 500)}`);
+    }
+    data = await res.json();
+    console.log(`API 応答: stop_reason=${data.stop_reason} / content=${(data.content ?? []).length}ブロック（${回 + 1}回目）`);
+    const u = data.usage ?? {};
+    検索した += u.server_tool_use?.web_search_requests ?? 0;
+    入力 += u.input_tokens ?? 0;
+    出力t += u.output_tokens ?? 0;
+    if (data.stop_reason !== 'pause_turn') break;
+    messages.push({ role: 'assistant', content: data.content });
   }
-  const data = await res.json();
-
-  // 実際にいくら使ったかを毎回残す。見積りでなく実測で判断するため。
-  const u = data.usage ?? {};
-  const 検索した = u.server_tool_use?.web_search_requests ?? 0;
-  const 入力 = u.input_tokens ?? 0;
-  const 出力 = u.output_tokens ?? 0;
+  // 実際にいくら使ったかを毎回残す。見積りでなく実測で判断するため（続き呼び出しぶんも合算）。
   // Sonnet 5: 入力 $2/Mtok、出力 $10/Mtok、Web検索 $10/1000回（2026-09 時点）
-  const 概算 = (入力 / 1e6) * 2 + (出力 / 1e6) * 10 + 検索した * 0.01;
+  const 概算 = (入力 / 1e6) * 2 + (出力t / 1e6) * 10 + 検索した * 0.01;
   console.log(
-    `使った分: 入力 ${入力} tok ／ 出力 ${出力} tok ／ Web検索 ${検索した} 回` +
+    `使った分: 入力 ${入力} tok ／ 出力 ${出力t} tok ／ Web検索 ${検索した} 回` +
       `（上限 ${設定.検索回数 ?? 8}）／ 概算 $${概算.toFixed(4)}`
   );
-
-  return (data.content ?? [])
+  if (data?.stop_reason === 'max_tokens') {
+    console.log('::warning::max_tokens で切れました。設定.検索回数 を減らすか max_tokens を上げてください');
+  }
+  return (data?.content ?? [])
     .filter((b) => b.type === 'text')
     .map((b) => b.text)
     .join('\n');
