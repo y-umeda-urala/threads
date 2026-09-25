@@ -177,7 +177,9 @@ def 今日のまとめ(対象日: date, 品たち: list[dict] | None = None,
     if not 品たち:
         return None
     日数 = (対象日 - 起点).days
-    最低 = min(4, いくつ)
+    # 3件そろえば切り口として出す。4件だと「越前がに」のような
+    # 福井ならではの切り口が立たない日が出る（2026-09-25）。
+    最低 = min(3, いくつ)
     for i in range(len(切り口たち)):
         き = 切り口たち[(日数 + i) % len(切り口たち)]
         合う = [p for p in sorted(品たち, key=lambda x: str(x.get("itemCode")))
