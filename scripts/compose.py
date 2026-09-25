@@ -33,6 +33,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import お得日
+import ふるさと納税
 import 宿
 
 JST = ZoneInfo("Asia/Tokyo")
@@ -352,7 +353,7 @@ def describe_filled(filled: dict[int, dict]) -> str:
     return "\n".join(parts)
 
 
-def build_prompt(board: str, neta: str, articles: str, works: str, recent: str, target_date, needed, filled, hotel=None, hotel_hour=None, mugi=None) -> str:
+def build_prompt(board: str, neta: str, articles: str, works: str, recent: str, target_date, needed, filled, hotel=None, hotel_hour=None, mugi=None, kifu=None) -> str:
     def _枠の行(hour, pillar, form, aim):
         行 = f"- {hour}:00 ｜ 深さ: {DEPTH.get(hour, 'B')} ｜ 柱: {pillar} ｜ 型: {form} ｜ ねらい: {aim}"
         # PR の枠は、9枠ぶんの指示に埋もれて読み飛ばされることがある。
@@ -716,6 +717,16 @@ def build_prompt(board: str, neta: str, articles: str, works: str, recent: str, 
         f"{hours} のぶんを、この順に @@@POST 〜 @@@END の組で並べてください。",
         f"HOUR には {hour_choices} のいずれかの数字だけを書きます。",
     ]
+    if kifu and hotel_hour is not None:
+        sections += [
+            f"## {hotel_hour}:00 の枠は、ふるさと納税のまとめです（PR）",
+            "",
+            "今日並べる返礼品（こちらで組み立てます。あなたは見出しだけ書いてください）:",
+            *[f"- {行}" for 行 in kifu["一覧"]],
+            "",
+            *寄付の決まり(kifu),
+            "",
+        ]
     if mugi and hotel_hour is not None:
         sections += [
             f"## {hotel_hour}:00 の枠は、クーポンのお知らせです（楽天トラベル・PR）",
@@ -952,6 +963,135 @@ def むぎの数字(text: str, 材料: dict) -> str | None:
     return None
 
 
+# 15:00 の枠を、その日どの型で書くか（2026-09-25 代表指示）。
+#   5と0のつく日 … むぎ型（クーポン1本）
+#   それ以外     … 宿の9選型 と ふるさと納税 を日替わり
+def 宿の型(対象日) -> str:
+    if お得日.旅(対象日):
+        return "むぎ"
+    # 5と0のつく日を除いた通し番号で、偶数なら宿、奇数ならふるさと納税
+    n = sum(1 for d in range(1, 対象日.day + 1) if d not in (5, 10, 15, 20, 25, 30))
+    return "宿" if n % 2 == 0 else "ふるさと納税"
+
+
+# 寄付の決まり（総務省のページで確認・2026-09-25）
+# https://www.soumu.go.jp/main_sosiki/jichi_zeisei/czaisei/czaisei_seido/furusato/mechanism/deduction.html
+節税と書く = re.compile(r"節税|税金が(減|安)|税が(減|安)")
+実質2000 = re.compile(r"実質\s*2[,，]?000\s*円|実質二千円")
+上限を断定 = re.compile(r"上限は\s*\d|控除(の)?上限\s*\d|\d+万円まで控除")
+
+
+def 寄付の決まり(選んだ: dict) -> list[str]:
+    """ふるさと納税の枠で守ってもらう決まり。"""
+    return [
+        "**この枠で書くのは、1行目の見出しだけです。** 他は何も書かないでください。",
+        "",
+        f"今日の切り口: {選んだ['name']}",
+        "",
+        "見出しの決まり",
+        "",
+        "1. **「【福井】」で始める。** そのあとに、何を集めたかを書く",
+        f"2. **最後に「◯選」と件数を入れる。** 今日は {選んだ['件数']} 件です",
+        "3. **日本語で 30 字まで。** 1行だけ。改行しない",
+        "4. **URL・【PR】・絵文字・ハッシュタグは書かない。** こちらで付けます",
+        "",
+        "税の話は、見出しにも本文にも書かないでください。",
+        "**節税と書かない**（節税ではなく控除です）。",
+        "**「実質2,000円」と書かない**（上限を超えると2,000円を超えます）。",
+        "**控除の上限額を断定しない**（年収と家族構成で変わります）。",
+        "これらは返信にこちらで正確な形で付けます。",
+        "",
+        "例（そのまま使わず、今日の切り口に合わせて書いてください）",
+        "  【福井】ふるさと納税でもらえる福井のお米5選",
+        "  【福井】1万円台で選べる福井の返礼品6選",
+        "",
+        "thread は空のままにしてください。返信はこちらで付けます。",
+    ]
+
+
+def 寄付の本文(まとめ: dict, 見出し: str) -> str:
+    """1本目。見出し＋返礼品の一覧。リンクは入れない。"""
+    品たち = list(まとめ["品"])
+    while 品たち:
+        削り = {**まとめ, "品": 品たち}
+        直した = 見出し.strip()
+        for 数 in range(len(まとめ["品"]), 0, -1):
+            直した = 直した.replace(f"{数}選", f"{len(品たち)}選")
+        本 = 直した + "\n\n" + "\n".join(ふるさと納税.一覧の行(削り))
+        if リンクの長さ(本) <= リンクの上限 or len(品たち) <= 3:
+            return 本
+        品たち = 品たち[:-1]
+    return 見出し.strip()
+
+
+# 返信でリンクを貼る件数。ふるさと納税のリンクは1本250字あり、
+# 全部貼ると連投が8本になる。本文の一覧で7件見せて、リンクは上位だけにする。
+# 代表が楽天アフィリエイトの管理画面で「福井県の一覧ページ」のリンクを1本
+# 作ってくれれば、連投は2本で済む（neta/ふるさと納税_リンク.jsonl）。
+リンクを貼る件数 = 3
+県のリンクの置き場 = Path("neta/ふるさと納税_リンク.jsonl")
+
+
+def 県のリンク() -> dict | None:
+    """福井県の一覧ページのアフィリエイトリンク。無ければ None。"""
+    if not 県のリンクの置き場.exists():
+        return None
+    for 行 in 県のリンクの置き場.read_text(encoding="utf-8").splitlines():
+        行 = 行.strip()
+        if not 行 or 行.startswith("#"):
+            continue
+        try:
+            x = json.loads(行)
+        except json.JSONDecodeError:
+            continue
+        if x.get("url") and x.get("名"):
+            return x
+    return None
+
+
+控除の注意 = (
+    "PR\n"
+    "ふるさと納税の控除について\n\n"
+    "寄付額のうち2,000円を超える部分が、所得税と住民税から控除されます。"
+    "ただし控除には上限があり、年収や家族構成で変わります。"
+    "上限を超えた分は自己負担になります。\n\n"
+    "確定申告が不要な給与所得者などで、寄付先が5自治体以内なら、"
+    "ワンストップ特例が使えます。申請書は寄付した翌年の1月10日必着です。\n\n"
+    "ご自身の上限額は、楽天ふるさと納税のシミュレーターでご確認ください。"
+)
+
+
+def 寄付の返信(まとめ: dict) -> list[str]:
+    """返信。リンクと、税の注意。
+
+    税の注意は人が確認した事実だけを決まった文で置く。AI には書かせない。
+    """
+    県 = 県のリンク()
+    if 県:
+        # 一覧ページが1本あれば、連投は2本で済む
+        return [f"PR\n楽天ふるさと納税の{県['名']}はこちらです\n\n{県['url']}", 控除の注意]
+
+    行たち = ふるさと納税.返信の行(まとめ)[:リンクを貼る件数]
+    出, いま = [], "PR\n楽天ふるさと納税のページはこちらです"
+    for 行 in 行たち:
+        つぎ = いま + "\n\n" + 行
+        if リンクの長さ(つぎ) > リンクの上限:
+            出.append(いま)
+            いま = "PR\n\n" + 行
+        else:
+            いま = つぎ
+    if いま:
+        出.append(いま)
+    if len(まとめ["品"]) > リンクを貼る件数:
+        出.append(
+            "PR\n\n"
+            f"ほかの{len(まとめ['品']) - リンクを貼る件数}件は、"
+            "楽天ふるさと納税で自治体名から探せます。"
+        )
+    出.append(控除の注意)
+    return 出
+
+
 def 宿の決まり(選んだ: dict) -> list[str]:
     """宿の枠で守ってもらう決まり。
 
@@ -1167,6 +1307,23 @@ def main() -> None:
     else:
         print("::warning::宿のリストが空です。宿の紹介はしません。")
 
+    # ふるさと納税の枠（2026-09-25 代表指示）。15:00 で宿と日替わり。
+    kifu = None
+    if 宿の型(target_date) == "ふるさと納税" and any(hour == HOTEL_HOUR for hour, *_ in needed):
+        品たち = ふるさと納税.読む()
+        まとめ = ふるさと納税.今日のまとめ(target_date, 品たち, いくつ=宿の軒数) if 品たち else None
+        if まとめ:
+            kifu = {
+                "name": まとめ["切り口"]["問い"],
+                "件数": len(まとめ["品"]),
+                "一覧": ふるさと納税.一覧の行(まとめ),
+                "raw": まとめ,
+            }
+            hotel = None   # この日は宿を出さない
+            print(f"  → 今日はふるさと納税の日です（{kifu['name']}／{kifu['件数']} 件）")
+        else:
+            print("::warning::ふるさと納税で4件そろう切り口がありません。宿で出します。")
+
     # むぎ型（クーポン1本だけの短文）。5と0のつく日に出す。
     mugi = None
     if hotel and 宿の型(target_date) == "むぎ":
@@ -1189,8 +1346,9 @@ def main() -> None:
     prompt = build_prompt(
         board, neta, articles, works, recent_texts(entries), target_date, needed, filled,
         hotel=hotel,
-        hotel_hour=HOTEL_HOUR if (hotel or mugi) else None,
+        hotel_hour=HOTEL_HOUR if (hotel or mugi or kifu) else None,
         mugi=mugi,
+        kifu=kifu,
     )
     posts = generate(api_key, model, prompt, [hour for hour, *_ in needed])
 
@@ -1245,13 +1403,34 @@ def main() -> None:
                     )
                 thread = むぎの返信(mugi)
 
-            if not hotel and not mugi and hour == HOTEL_HOUR and text.startswith(PR_MARKERS):
+            if not hotel and not mugi and not kifu and hour == HOTEL_HOUR and text.startswith(PR_MARKERS):
                 # 宿の枠が立っていないのに PR 投稿が作られた。
                 # リンクが付かないので成果にならず、表示だけが残る。
                 落とす(
                     f"{hour}:00 が【PR】で始まっていますが、今日は紹介できる宿がありません"
                     f"（先頭 30 字: {text[:30]!r}）。"
                 )
+
+            if kifu and hour == HOTEL_HOUR:
+                見出し = text.splitlines()[0].strip() if text else ""
+                if not 見出し:
+                    落とす(f"{hour}:00 の見出しが空です。")
+                if URL_IN_TEXT.search(見出し):
+                    落とす(f"{hour}:00 の見出しに URL が入っています。")
+                if "福井" not in 見出し:
+                    落とす(f"{hour}:00 の見出しに「福井」が入っていません（{見出し!r}）。")
+                if len(見出し) > 34:
+                    落とす(f"{hour}:00 の見出しが長すぎます（{len(見出し)} 字）: {見出し!r}")
+                for 罠, わけ in (
+                    (節税と書く, "節税ではなく控除です。税が減るわけではありません"),
+                    (実質2000, "上限を超えると実質の負担は2,000円を超えます"),
+                    (上限を断定, "控除の上限は年収と家族構成で変わるので断定できません"),
+                ):
+                    当 = 罠.search(見出し)
+                    if 当:
+                        落とす(f"{hour}:00 の見出しに「{当.group(0)}」が入っています。{わけ}。")
+                text = 寄付の本文(kifu["raw"], 見出し)
+                thread = 寄付の返信(kifu["raw"])
 
             if hotel and hour == HOTEL_HOUR:
                 # AI に書かせるのは見出し1行だけ。宿の一覧・リンクはこちらで組み立てる。
