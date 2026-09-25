@@ -1103,13 +1103,37 @@ def PRを末尾に(文: str) -> str:
 )
 
 
+切り口リンクの置き場 = Path("neta/ふるさと納税_切り口リンク.jsonl")
+
+
+def 切り口のリンク(まとめ: dict) -> dict | None:
+    """その日の切り口に合う検索結果ページ。url が空の行は無いものとして扱う。"""
+    名 = str((まとめ.get("切り口") or {}).get("名") or "").strip()
+    if not 名 or not 切り口リンクの置き場.exists():
+        return None
+    for 行 in 切り口リンクの置き場.read_text(encoding="utf-8").splitlines():
+        行 = 行.strip()
+        if not 行 or 行.startswith("#"):
+            continue
+        try:
+            x = json.loads(行)
+        except json.JSONDecodeError:
+            continue
+        if str(x.get("切り口") or "").strip() == 名 and str(x.get("url") or "").strip():
+            return x
+    return None
+
+
 def 寄付の返信(まとめ: dict) -> list[str]:
     """返信。リンクと、税の注意。
 
     税の注意は人が確認した事実だけを決まった文で置く。AI には書かせない。
     """
     フック = str((まとめ.get("切り口") or {}).get("フック") or "").strip()
-    県 = 県のリンク()
+    # 切り口ごとの検索結果ページがあれば、そちらに送る。
+    # 県全体の一覧より、①〜④が並んでいる画面に近いところへ着地させるため
+    # （2026-09-25 代表の指摘）。無ければ県の一覧に落ちる。
+    県 = 切り口のリンク(まとめ) or 県のリンク()
     if 県:
         # 一覧ページが1本あれば、連投は2本で済む。
         # 2投稿目で「福井ならでは」を伝える（2026-09-25 代表指示）。
