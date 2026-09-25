@@ -30,6 +30,8 @@ jobs:
       DRY_RUN: ${{ github.event.inputs.dry_run }}
       # 外部 cron からは client_payload.target_date で当日ぶんの作り直しができる
       TARGET_DATE: ${{ github.event.client_payload.target_date || github.event.inputs.target_date }}
+      # ONLY_HOURS=15 のように渡すと、その枠だけを作る（中身を先に見たいとき用）
+      ONLY_HOURS: ${{ github.event.client_payload.only_hours }}
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       # ドキュメント ID は秘密ではないので Variables に置く
       BOARD_DOC_ID: ${{ vars.BOARD_DOC_ID }}

@@ -1296,6 +1296,20 @@ def main() -> None:
             print("作れる枠がありません。何もしません。")
             return
 
+    # ONLY_HOURS=15 のように書くと、その枠だけを作る。
+    # 枠ひとつの中身を先に見たいとき用（2026-09-25 追加）。
+    # 残りの枠は、いつもの 20:00 の回でそのまま埋まる。
+    だけ = os.environ.get("ONLY_HOURS", "").strip()
+    if だけ:
+        許す = {int(x) for x in re.split(r"[,、\s]+", だけ) if x.strip().isdigit()}
+        のぞいた = [f"{h}:00" for h, *_ in needed if h not in 許す]
+        needed = [slot for slot in needed if slot[0] in 許す]
+        if のぞいた:
+            print("ONLY_HOURS の指定により作らない枠: " + "、".join(のぞいた))
+        if not needed:
+            print(f"ONLY_HOURS={だけ} に当てはまる枠がありません。何もしません。")
+            return
+
     print("これから作る枠: " + "、".join(f"{h}:00" for h, *_ in needed))
 
     board = fetch_doc(os.environ.get("BOARD_DOC_ID", "").strip(), "運用ボード")
