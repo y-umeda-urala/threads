@@ -883,7 +883,8 @@ def source_urls(text: str, thread: list[str]) -> set[str]:
 検索語 = "福井イベント"
 
 # 1本のまとめに何軒並べるか。
-宿の軒数 = 7
+# 何件見せるかは日によって 3〜5 と変わる（2026-09-26 代表指示）。
+# 宿.今日の件数() が日付から決めるので、3アカウントとも同じ件数になる。
 
 HOTEL_HOUR = 15
 
@@ -1371,7 +1372,7 @@ def main() -> None:
     宿たち = 宿.読む()
     hotel = None
     if 宿たち and any(hour == HOTEL_HOUR for hour, *_ in needed):
-        まとめ = 宿.今日のまとめ(target_date, 宿たち, いくつ=宿の軒数)
+        まとめ = 宿.今日のまとめ(target_date, 宿たち, いくつ=宿.今日の件数(target_date))
         if まとめ:
             hotel = {
                 "name": まとめ["切り口"]["問い"],
@@ -1395,7 +1396,7 @@ def main() -> None:
     kifu = None
     if 宿の型(target_date) == "ふるさと納税" and any(hour == HOTEL_HOUR for hour, *_ in needed):
         品たち = ふるさと納税.読む()
-        まとめ = ふるさと納税.今日のまとめ(target_date, 品たち, いくつ=宿の軒数) if 品たち else None
+        まとめ = ふるさと納税.今日のまとめ(target_date, 品たち, いくつ=宿.今日の件数(target_date)) if 品たち else None
         if まとめ:
             kifu = {
                 "name": まとめ["切り口"]["問い"],
